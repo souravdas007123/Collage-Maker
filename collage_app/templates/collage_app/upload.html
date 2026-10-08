@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro Collage Maker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --primary: #4f46e5; --primary-hover: #4338ca;
+            --success: #10b981; --success-hover: #059669;
+            --danger: #ef4444; --bg-color: #f3f4f6;
+            --text-main: #1f2937; --text-muted: #6b7280; --border-color: #e5e7eb;
+        }
+
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg-color); color: var(--text-main); margin: 0; padding: 0; }
+        .navbar { background: white; padding: 15px 30px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; font-size: 22px; font-weight: 700; color: var(--primary); margin-bottom: 40px; }
+        .navbar i { margin-right: 8px; }
+        .container { max-width: 800px; margin: 0 auto; padding: 0 20px 50px; }
+        .card { background: white; border-radius: 16px; padding: 40px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05); text-align: center; }
+        h2 { margin-top: 0; font-weight: 600; color: var(--text-main); }
+        .subtitle { color: var(--text-muted); margin-bottom: 30px; }
+
+        .form-row { display: flex; gap: 20px; margin-bottom: 25px; }
+        .form-group { flex: 1; text-align: left; }
+        .form-group label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 8px; color: var(--text-main); }
+        .form-control { width: 100%; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 15px; box-sizing: border-box; font-family: inherit; }
+        .form-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+
+        .upload-area { border: 2px dashed #cbd5e1; border-radius: 12px; padding: 40px 20px; background: #f8fafc; margin-bottom: 30px; transition: all 0.3s; cursor: pointer; }
+        .upload-area:hover { border-color: var(--primary); background: #f1f5f9; }
+        .upload-area i.main-icon { font-size: 45px; color: #94a3b8; margin-bottom: 15px; }
+        .upload-text { font-size: 16px; font-weight: 600; color: var(--text-main); margin-bottom: 5px; }
+        .upload-subtext { font-size: 13px; color: var(--text-muted); }
+        .upload-area input[type="file"] { display: none; } 
+
+        .upload-area.active i.main-icon { display: none; }
+        .upload-area.active { border-color: var(--success); background: #f0fdf4; padding: 20px; }
+
+        .thumbnail-gallery { display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; margin-top: 20px; }
+        .thumb-wrapper { position: relative; display: inline-block; }
+        .thumb-wrapper img { width: 70px; height: 70px; object-fit: cover; border-radius: 8px; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .delete-btn { position: absolute; top: -6px; right: -6px; background: var(--danger); color: white; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s; }
+        .delete-btn:hover { background: #b91c1c; transform: scale(1.1); }
+
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 28px; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; text-decoration: none; font-family: inherit; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-2px); }
+        .btn-success { background: var(--success); color: white; }
+        .btn-success:hover { background: var(--success-hover); transform: translateY(-2px); }
+        .btn-danger { background: white; color: var(--danger); border: 1px solid #fca5a5; }
+        .btn-danger:hover { background: #fef2f2; }
+        .btn:disabled { opacity: 0.7; cursor: not-allowed; }
+
+        .preview-header { display: flex; align-items: center; justify-content: space-between; background: white; padding: 20px 30px; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); text-align: left; }
+        .preview-header h3 { margin: 0; font-size: 18px; }
+        .preview-header p { margin: 5px 0 0; font-size: 14px; color: var(--text-muted); }
+        .action-buttons { display: flex; gap: 15px; }
+        .page-preview { max-width: 100%; border-radius: 4px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); margin-bottom: 40px; background: white; }
+        
+        /* Hidden Sections by default */
+        #preview-section { display: none; }
+
+        @media (max-width: 600px) { .form-row { flex-direction: column; gap: 15px; } .preview-header { flex-direction: column; text-align: center; gap: 15px; } }
+    </style>
+</head>
+<body>
+
+    <div class="navbar"><i class="fa-solid fa-images"></i> Pro Collage Maker</div>
+
+    <div class="container">
+        
+        <!-- PREVIEW SECTION -->
+        <div id="preview-section">
+            <form method="POST" id="download-form">
+                {% csrf_token %}
+                <input type="hidden" name="download_pdf" value="1">
+                
+                <div class="preview-header">
+                    <div>
+                        <h3><i class="fa-solid fa-eye" style="color: var(--primary);"></i> Document Preview</h3>
+                        <p>Review your pages below before downloading.</p>
+                    </div>
+                    <div class="action-buttons">
+                        <!-- Naya AJAX Go Back button -->
+                        <button type="button" class="btn btn-danger" id="go-back-btn"><i class="fa-solid fa-arrow-left"></i> Go Back</button>
+                        <button type="submit" class="btn btn-success"><i class="fa-solid fa-download"></i> Download PDF</button>
+                    </div>
+                </div>
+                
+                <!-- Yahan dynamically base64 images aayengi -->
+                <div id="preview-content"></div>
+            </form>
+        </div>
+        
+        <!-- UPLOAD SECTION -->
+        <div id="upload-section" class="card">
+            <h2>Create Your Collage</h2>
+            <p class="subtitle">Upload multiple images, add optional text, and get a print-ready PDF.</p>
+            
+            <form method="POST" enctype="multipart/form-data" id="upload-form">
+                {% csrf_token %}
+                <div class="form-row">
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-heading"></i> Header Text (Optional)</label>
+                        <input type="text" class="form-control" name="header_text" placeholder="e.g. Summer Vacation 2024">
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fa-solid fa-shoe-prints"></i> Footer Text (Optional)</label>
+                        <input type="text" class="form-control" name="footer_text" placeholder="e.g. Beautiful Memories">
+                    </div>
+                </div>
+
+                <div class="upload-area" id="drop-zone">
+                    <i class="fa-solid fa-cloud-arrow-up main-icon" id="upload-icon"></i>
+                    <div class="upload-text" id="upload-text">Click to select photos</div>
+                    <div class="upload-subtext" id="upload-subtext">Supports JPG, PNG, WEBP (Select multiple)</div>
+                    <div class="thumbnail-gallery" id="thumbnail-gallery"></div>
+                    <input type="file" name="images" id="file-input" accept="image/*" multiple>
+                </div>
+                
+                <button type="submit" class="btn btn-primary" id="submit-btn">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Preview
+                </button>
+            </form>
+        </div>
+
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const fileInput = document.getElementById('file-input');
+            const dropZone = document.getElementById('drop-zone');
+            const gallery = document.getElementById('thumbnail-gallery');
+            const uploadText = document.getElementById('upload-text');
+            const uploadSubtext = document.getElementById('upload-subtext');
+            const uploadForm = document.getElementById('upload-form');
+            const previewSection = document.getElementById('preview-section');
+            const uploadSection = document.getElementById('upload-section');
+            const submitBtn = document.getElementById('submit-btn');
+            const previewContent = document.getElementById('preview-content');
+            
+            let selectedFilesArray = [];
+
+            if(dropZone && fileInput) {
+                dropZone.addEventListener('click', function(e) {
+                    if (!e.target.closest('.delete-btn') && !e.target.closest('.thumb-wrapper')) {
+                        fileInput.click();
+                    }
+                });
+
+                fileInput.addEventListener('change', function() {
+                    const files = this.files;
+                    for(let i = 0; i < files.length; i++) {
+                        selectedFilesArray.push(files[i]);
+                    }
+                    this.value = ""; 
+                    updateGallery();
+                });
+            }
+
+            function updateGallery() {
+                gallery.innerHTML = '';
+                const fileCount = selectedFilesArray.length;
+
+                if(fileCount > 0) {
+                    dropZone.classList.add('active');
+                    uploadText.innerHTML = `<span style="color: var(--success); font-size: 18px;"><i class="fa-solid fa-circle-check"></i> ${fileCount} Photo(s) Ready!</span>`;
+                    uploadSubtext.innerText = "Click empty space to add MORE photos";
+
+                    selectedFilesArray.forEach((file, index) => {
+                        const wrapper = document.createElement('div');
+                        wrapper.className = 'thumb-wrapper';
+
+                        const imgUrl = URL.createObjectURL(file);
+                        const img = document.createElement('img');
+                        img.src = imgUrl;
+
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.className = 'delete-btn';
+                        deleteBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+                        
+                        deleteBtn.onclick = function(e) {
+                            e.preventDefault(); 
+                            e.stopPropagation();
+                            selectedFilesArray.splice(index, 1);
+                            updateGallery();
+                        };
+
+                        wrapper.appendChild(img);
+                        wrapper.appendChild(deleteBtn);
+                        gallery.appendChild(wrapper);
+                    });
+                } else {
+                    dropZone.classList.remove('active');
+                    uploadText.innerText = "Click to select photos";
+                    uploadSubtext.innerText = "Supports JPG, PNG, WEBP (Select multiple)";
+                }
+            }
+
+            // AJAX Form Submission (Bina page refresh kiye)
+            if (uploadForm) {
+                uploadForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    
+                    if (selectedFilesArray.length === 0) {
+                        alert("Please select at least one photo!");
+                        return;
+                    }
+                    
+                    // Final files form mein dalo
+                    const dataTransfer = new DataTransfer();
+                    selectedFilesArray.forEach(file => dataTransfer.items.add(file));
+                    fileInput.files = dataTransfer.files;
+
+                    const formData = new FormData(this);
+                    formData.append('is_ajax', '1'); // Backend ko pata chale JSON dena hai
+
+                    // Loading Spinner Dikhao
+                    const originalText = submitBtn.innerHTML;
+                    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating Preview...';
+                    submitBtn.disabled = true;
+
+                    // Background Request (Fetch API)
+                    fetch('', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if(data.status === 'success') {
+                            previewContent.innerHTML = '';
+                            
+                            // Nayi images aur hidden fields add karo
+                            data.pages_base64.forEach((b64, index) => {
+                                previewContent.innerHTML += `<input type="hidden" name="pdf_pages" value="${b64}">`;
+                                previewContent.innerHTML += `<img class="page-preview" src="data:image/jpeg;base64,${b64}" alt="Page ${index + 1}">`;
+                            });
+
+                            // Upload form chupao, Preview form dikhao
+                            uploadSection.style.display = 'none';
+                            previewSection.style.display = 'block';
+                        }
+                    })
+                    .catch(error => {
+                        alert("Something went wrong!");
+                        console.error(error);
+                    })
+                    .finally(() => {
+                        // Button wapas theek kar do
+                        submitBtn.innerHTML = originalText;
+                        submitBtn.disabled = false;
+                    });
+                });
+            }
+
+            // Go Back Button logic (Data safe rakhega)
+            document.getElementById('go-back-btn').addEventListener('click', function() {
+                previewSection.style.display = 'none';
+                uploadSection.style.display = 'block';
+            });
+        });
+    </script>
+
+</body>
+</html>
