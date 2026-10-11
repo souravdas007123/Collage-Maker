@@ -160,6 +160,15 @@
                     </div>
                 </div>
 
+                <div class="form-group">
+                    <label for="photo-size"><i class="fa-solid fa-expand"></i> Photo size (bigger photos = more pages)</label>
+                    <select class="form-control" id="photo-size">
+                        <option value="small">Small - most photos per page</option>
+                        <option value="normal" selected>Normal - clear to see (recommended)</option>
+                        <option value="large">Large - few photos per page</option>
+                    </select>
+                </div>
+
                 <label class="check-row" style="margin-bottom: 25px; text-align: left;">
                     <input type="checkbox" id="auto-rotate" checked>
                     <span>Turn photos 90&deg; to fill the page (only when it leaves less empty space)</span>
@@ -624,6 +633,7 @@
                 formData.append("footer_text", $("footer-text").value);
                 formData.append("page_size", $("page-size").value);
                 formData.append("margin", marginInput.value);
+                formData.append("photo_size", $("photo-size").value);
                 formData.append("auto_rotate", $("auto-rotate").checked ? "1" : "0");
                 if (signatureFile) {
                     formData.append("signature", signatureFile, signatureFile.name);

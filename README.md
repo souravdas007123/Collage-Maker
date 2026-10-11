@@ -8,8 +8,8 @@ A Django app that turns many photos into a tight, print-ready collage PDF (A4, A
 - Page size and spacing options
 - Uses the page fully: photos start at the very top and are packed down the page with an exact search, keeping
   every photo's aspect ratio (nothing is cropped or stretched). It tries to put everything on ONE page, but never by
-  making photos tiny (none is shorter than about 1.6 inch and sizes stay balanced); if that is not possible the
-  extra photos go to the next page. Space for header, footer and signature exists only when you use them
+  making photos tiny: pick a "Photo size" (Small / Normal / Large, default Normal = about 3 inch tall) and any
+  photos that would have to be smaller go to the next page Space for header, footer and signature exists only when you use them
   (header text gets padding above and below it, then the photos start)
 - "Turn photos 90 degrees to fill the page" (on by default) rotates photos clockwise only when that leaves
   clearly less empty space and never needs more pages; untick it to keep every photo upright

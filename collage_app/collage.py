@@ -38,6 +38,9 @@ PAGE_SIZES = {
 DEFAULT_PAGE_SIZE = "A4"
 DEFAULT_MARGIN = 15
 MAX_MARGIN = 60
+# Smallest photo height (px at 150 DPI, A4; a guide, a few photos can end up a bit smaller) - so photos stay clearly visible; the rest go to the next page
+PHOTO_SIZES = {"small": 300, "normal": 440, "large": 600}
+DEFAULT_PHOTO_SIZE = "normal"
 JPEG_QUALITY = 90
 MAX_PDF_PAGE_PIXELS = 20_000_000
 
@@ -311,7 +314,8 @@ def _plan_rows(ids, aspects, target_h, width, gap, max_h):
             h_with = raw_height(len(row) + 1, aspect_sum + a)
             # Adding this photo would make the row shorter than the target.
             # Close the row first if that lands nearer the target height.
-            if h_with < target_h and (h_without - target_h) <= (target_h - h_with) and h_without <= target_h * 1.25:
+            if h_with < target_h and h_without <= target_h * 1.25 and (
+                    (h_without - target_h) <= (target_h - h_with) or h_with < 0.92 * target_h):
                 rows.append((row, min(h_without, max_h), False))
                 row, aspect_sum = [], 0.0
         row.append(i)
@@ -409,7 +413,7 @@ def _dp_best(ids, aspects, width, gap, limit, ref_hi, ref_lo, step, floor):
     return best
 
 
-def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
+def _layout(aspects, page_w, page_h, margin, header_h, footer_h, min_h=PHOTO_SIZES[DEFAULT_PHOTO_SIZE]):
     """Return pages -> list[Placement]. Everything is packed from the top of the page down."""
     count = len(aspects)
     usable_w = page_w - 2 * margin
@@ -418,7 +422,7 @@ def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
     gap = margin
     scale = page_w / BASE_PAGE_WIDTH
 
-    h_lo = max(40, round(240 * scale))
+    h_lo = max(40, round(min_h * scale))
     h_hi = usable_h if count == 1 else min(usable_h, round(800 * scale))
     h_hi = max(h_hi, h_lo)
     ids = list(range(count))
@@ -481,14 +485,15 @@ def _coverage(layout, usable_w, usable_h):
     return covered / (len(layout) * usable_w * usable_h)
 
 
-def _best_layout(aspects, page_w, page_h, margin, header_h, footer_h, auto_rotate):
+def _best_layout(aspects, page_w, page_h, margin, header_h, footer_h, auto_rotate,
+                 min_h=PHOTO_SIZES[DEFAULT_PHOTO_SIZE]):
     """Return (layout, rotated_flags). Tries turning photos 90 degrees if that fills the page better."""
     usable_w = page_w - 2 * margin
     usable_h = page_h - 2 * margin - header_h - footer_h
 
     def run(flags):
         turned = [1 / a if flag else a for a, flag in zip(aspects, flags)]
-        return _layout(turned, page_w, page_h, margin, header_h, footer_h)
+        return _layout(turned, page_w, page_h, margin, header_h, footer_h, min_h)
 
     upright = [False] * len(aspects)
     best_layout = run(upright)
@@ -544,7 +549,7 @@ def _skip_reason(name, exc):
 def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
                   header_text="", footer_text="", signature=None, signature_position="right",
                   signature_height=DEFAULT_SIGNATURE_HEIGHT, signature_pages="last",
-                  signature_clean=True, auto_rotate=True):
+                  signature_clean=True, auto_rotate=True, photo_size=DEFAULT_PHOTO_SIZE):
     """sources: iterable of (name, seekable file object). Photo order is kept.
 
     signature: optional seekable image file. It is stamped in its own band above the
@@ -591,7 +596,8 @@ def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
         x = {"left": side, "center": (page_w - stamp.width) // 2, "right": page_w - side - stamp.width}[signature_position]
         stamp_xy = (x, page_h - footer_h + (stamp_band - stamp.height) // 2)
 
-    layout, rotated = _best_layout([p.aspect for p in photos], page_w, page_h, margin, header_h, footer_h, auto_rotate)
+    layout, rotated = _best_layout([p.aspect for p in photos], page_w, page_h, margin, header_h, footer_h, auto_rotate,
+                                   PHOTO_SIZES.get(photo_size, PHOTO_SIZES[DEFAULT_PHOTO_SIZE]))
     result.rotated = sum(rotated)
     for index, placements in enumerate(layout):
         page = layer.copy()

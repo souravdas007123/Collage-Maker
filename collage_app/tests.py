@@ -186,10 +186,23 @@ class PageFillTests(unittest.TestCase):
 
     def test_ten_photos_fit_one_page_and_fill_it(self):
         for size in ((1600, 1200), (1200, 1600), (1500, 1500)):
-            result = collage.build_collage(sources(10, *size))
+            result = collage.build_collage(sources(10, *size), photo_size="small")
             self.assertEqual(len(result.pages), 1, size)
             box = ink_box(result.pages[0])
             self.assertGreater((box[3] - box[1]) / result.pages[0].height, 0.8, size)
+
+    def test_photos_never_smaller_than_the_chosen_size(self):
+        aspects = [1.33, 0.75, 1.5, 1.0, 1.78, 0.56] * 3
+        for name, min_h in collage.PHOTO_SIZES.items():
+            layout = collage._best_layout(aspects, 1240, 1754, 15, 0, 0, False, min_h)[0]
+            self.assertEqual(sum(len(p) for p in layout), len(aspects))
+            heights = [p.h for page in layout for p in page]
+            self.assertGreaterEqual(min(heights), min_h * 0.7, name)
+
+    def test_bigger_photo_size_means_more_pages(self):
+        pages = [len(collage.build_collage(sources(14, 1600, 1200), photo_size=n).pages) for n in ("small", "normal", "large")]
+        self.assertEqual(pages, sorted(pages))
+        self.assertGreater(pages[2], pages[0])
 
     def test_header_gets_padding_and_photos_start_below_it(self):
         page = collage.build_collage(sources(10), header_text="My Title").pages[0]
@@ -205,7 +218,7 @@ class PageFillTests(unittest.TestCase):
         for _ in range(12):
             count = rng.randint(4, 16)
             aspects = [rng.choice([4 / 3, 3 / 4, 3 / 2, 2 / 3, 1.0, 16 / 9]) for _ in range(count)]
-            layout, _ = collage._best_layout(aspects, 1240, 1754, 15, 0, 0, True)
+            layout, _ = collage._best_layout(aspects, 1240, 1754, 15, 0, 0, True, collage.PHOTO_SIZES["small"])
             coverage = collage._coverage(layout, 1210, 1724)
             self.assertEqual(len(layout), 1)
             self.assertGreater(coverage, 0.6, aspects)

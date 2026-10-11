@@ -103,6 +103,7 @@ def create_preview(request):
             signature_pages=signature_pages if signature_pages in collage.SIGNATURE_PAGES else "last",
             signature_clean=request.POST.get("signature_clean", "1") == "1",
             auto_rotate=request.POST.get("auto_rotate", "1") == "1",
+            photo_size=request.POST.get("photo_size", collage.DEFAULT_PHOTO_SIZE),
         )
     except Exception:
         logger.exception("Collage generation failed")
