@@ -6,12 +6,14 @@
     <title>Pro Collage Maker</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
+
     <style>
         :root {
             --primary: #4f46e5; --primary-hover: #4338ca;
             --success: #10b981; --success-hover: #059669;
-            --danger: #ef4444; --bg-color: #f3f4f6;
+            --danger: #ef4444; --warning-bg: #fffbeb; --warning-border: #fcd34d; --warning-text: #92400e;
+            --error-bg: #fef2f2; --error-border: #fca5a5; --error-text: #991b1b;
+            --bg-color: #f3f4f6;
             --text-main: #1f2937; --text-muted: #6b7280; --border-color: #e5e7eb;
         }
 
@@ -26,240 +28,440 @@
         .form-row { display: flex; gap: 20px; margin-bottom: 25px; }
         .form-group { flex: 1; text-align: left; }
         .form-group label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 8px; color: var(--text-main); }
-        .form-control { width: 100%; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 15px; box-sizing: border-box; font-family: inherit; }
+        .form-control { width: 100%; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 15px; box-sizing: border-box; font-family: inherit; background: white; }
         .form-control:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1); }
+        input[type="range"] { width: 100%; margin: 10px 0 0; accent-color: var(--primary); }
+        .range-value { font-weight: 600; color: var(--primary); }
 
         .upload-area { border: 2px dashed #cbd5e1; border-radius: 12px; padding: 40px 20px; background: #f8fafc; margin-bottom: 30px; transition: all 0.3s; cursor: pointer; }
-        .upload-area:hover { border-color: var(--primary); background: #f1f5f9; }
+        .upload-area:hover, .upload-area.drag-over { border-color: var(--primary); background: #f1f5f9; }
+        .upload-area:focus-visible { outline: 3px solid rgba(79, 70, 229, 0.35); }
         .upload-area i.main-icon { font-size: 45px; color: #94a3b8; margin-bottom: 15px; }
         .upload-text { font-size: 16px; font-weight: 600; color: var(--text-main); margin-bottom: 5px; }
         .upload-subtext { font-size: 13px; color: var(--text-muted); }
-        .upload-area input[type="file"] { display: none; } 
+        .upload-area input[type="file"] { display: none; }
 
         .upload-area.active i.main-icon { display: none; }
         .upload-area.active { border-color: var(--success); background: #f0fdf4; padding: 20px; }
 
         .thumbnail-gallery { display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; margin-top: 20px; }
-        .thumb-wrapper { position: relative; display: inline-block; }
-        .thumb-wrapper img { width: 70px; height: 70px; object-fit: cover; border-radius: 8px; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .thumb-wrapper { position: relative; display: inline-block; cursor: grab; }
+        .thumb-wrapper img { width: 70px; height: 70px; object-fit: cover; border-radius: 8px; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: block; }
+        .thumb-wrapper.dragging { opacity: 0.35; }
+        .thumb-wrapper.drag-target img { border-color: var(--primary); }
+        .order-badge { position: absolute; bottom: 4px; left: 4px; background: rgba(31, 41, 55, 0.75); color: white; font-size: 11px; font-weight: 600; border-radius: 10px; min-width: 18px; padding: 1px 5px; text-align: center; box-sizing: border-box; }
         .delete-btn { position: absolute; top: -6px; right: -6px; background: var(--danger); color: white; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s; }
         .delete-btn:hover { background: #b91c1c; transform: scale(1.1); }
+        .link-btn { background: none; border: none; color: var(--text-muted); font-size: 13px; cursor: pointer; text-decoration: underline; font-family: inherit; margin-top: 15px; }
+        .link-btn:hover { color: var(--danger); }
 
         .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 28px; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.2s; text-decoration: none; font-family: inherit; }
         .btn-primary { background: var(--primary); color: white; }
         .btn-primary:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-2px); }
         .btn-success { background: var(--success); color: white; }
-        .btn-success:hover { background: var(--success-hover); transform: translateY(-2px); }
+        .btn-success:hover:not(:disabled) { background: var(--success-hover); transform: translateY(-2px); }
         .btn-danger { background: white; color: var(--danger); border: 1px solid #fca5a5; }
         .btn-danger:hover { background: #fef2f2; }
         .btn:disabled { opacity: 0.7; cursor: not-allowed; }
+
+        .alerts:empty { display: none; }
+        .alerts { margin-bottom: 20px; text-align: left; }
+        .alert { border-radius: 8px; padding: 12px 16px; font-size: 14px; margin-bottom: 10px; border: 1px solid; }
+        .alert-error { background: var(--error-bg); border-color: var(--error-border); color: var(--error-text); }
+        .alert-warning { background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-text); }
 
         .preview-header { display: flex; align-items: center; justify-content: space-between; background: white; padding: 20px 30px; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); text-align: left; }
         .preview-header h3 { margin: 0; font-size: 18px; }
         .preview-header p { margin: 5px 0 0; font-size: 14px; color: var(--text-muted); }
         .action-buttons { display: flex; gap: 15px; }
-        .page-preview { max-width: 100%; border-radius: 4px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); margin-bottom: 40px; background: white; }
-        
-        /* Hidden Sections by default */
+        .page-preview { display: block; max-width: 100%; border-radius: 4px; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); margin-bottom: 40px; background: white; }
+
         #preview-section { display: none; }
 
-        @media (max-width: 600px) { .form-row { flex-direction: column; gap: 15px; } .preview-header { flex-direction: column; text-align: center; gap: 15px; } }
+        @media (max-width: 600px) { .form-row { flex-direction: column; gap: 15px; } .preview-header { flex-direction: column; text-align: center; gap: 15px; } .card { padding: 25px 20px; } }
     </style>
 </head>
 <body>
 
     <div class="navbar"><i class="fa-solid fa-images"></i> Pro Collage Maker</div>
 
-    <div class="container">
-        
+    <div class="container"
+         data-preview-url="{% url 'create_preview' %}"
+         data-pdf-url="{% url 'download_pdf' %}"
+         data-max-photos="{{ max_photos }}">
+
         <!-- PREVIEW SECTION -->
         <div id="preview-section">
-            <form method="POST" id="download-form">
-                {% csrf_token %}
-                <input type="hidden" name="download_pdf" value="1">
-                
-                <div class="preview-header">
-                    <div>
-                        <h3><i class="fa-solid fa-eye" style="color: var(--primary);"></i> Document Preview</h3>
-                        <p>Review your pages below before downloading.</p>
-                    </div>
-                    <div class="action-buttons">
-                        <!-- Naya AJAX Go Back button -->
-                        <button type="button" class="btn btn-danger" id="go-back-btn"><i class="fa-solid fa-arrow-left"></i> Go Back</button>
-                        <button type="submit" class="btn btn-success"><i class="fa-solid fa-download"></i> Download PDF</button>
-                    </div>
+            <div class="preview-header">
+                <div>
+                    <h3><i class="fa-solid fa-eye" style="color: var(--primary);"></i> Document Preview</h3>
+                    <p>This is exactly what the PDF will contain.</p>
                 </div>
-                
-                <!-- Yahan dynamically base64 images aayengi -->
-                <div id="preview-content"></div>
-            </form>
+                <div class="action-buttons">
+                    <button type="button" class="btn btn-danger" id="go-back-btn"><i class="fa-solid fa-arrow-left"></i> Go Back</button>
+                    <button type="button" class="btn btn-success" id="download-btn"><i class="fa-solid fa-download"></i> Download PDF</button>
+                </div>
+            </div>
+            <div class="alerts" id="preview-alerts"></div>
+            <div id="preview-content"></div>
         </div>
-        
+
         <!-- UPLOAD SECTION -->
         <div id="upload-section" class="card">
             <h2>Create Your Collage</h2>
-            <p class="subtitle">Upload multiple images, add optional text, and get a print-ready PDF.</p>
-            
-            <form method="POST" enctype="multipart/form-data" id="upload-form">
+            <p class="subtitle">Upload photos, arrange them, and get a print-ready PDF.</p>
+
+            <div class="alerts" id="upload-alerts"></div>
+
+            <form method="POST" id="upload-form">
                 {% csrf_token %}
                 <div class="form-row">
                     <div class="form-group">
-                        <label><i class="fa-solid fa-heading"></i> Header Text (Optional)</label>
-                        <input type="text" class="form-control" name="header_text" placeholder="e.g. Summer Vacation 2024">
+                        <label for="header-text"><i class="fa-solid fa-heading"></i> Header Text (Optional)</label>
+                        <input type="text" class="form-control" id="header-text" maxlength="{{ max_text }}" placeholder="e.g. Summer Vacation 2024">
                     </div>
                     <div class="form-group">
-                        <label><i class="fa-solid fa-shoe-prints"></i> Footer Text (Optional)</label>
-                        <input type="text" class="form-control" name="footer_text" placeholder="e.g. Beautiful Memories">
+                        <label for="footer-text"><i class="fa-solid fa-shoe-prints"></i> Footer Text (Optional)</label>
+                        <input type="text" class="form-control" id="footer-text" maxlength="{{ max_text }}" placeholder="e.g. Beautiful Memories">
                     </div>
                 </div>
 
-                <div class="upload-area" id="drop-zone">
-                    <i class="fa-solid fa-cloud-arrow-up main-icon" id="upload-icon"></i>
-                    <div class="upload-text" id="upload-text">Click to select photos</div>
-                    <div class="upload-subtext" id="upload-subtext">Supports JPG, PNG, WEBP (Select multiple)</div>
-                    <div class="thumbnail-gallery" id="thumbnail-gallery"></div>
-                    <input type="file" name="images" id="file-input" accept="image/*" multiple>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="page-size"><i class="fa-solid fa-file"></i> Page Size</label>
+                        <select class="form-control" id="page-size">
+                            {% for name in page_sizes %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="margin"><i class="fa-solid fa-arrows-left-right"></i> Spacing: <span class="range-value" id="margin-value">{{ default_margin }}</span> px</label>
+                        <input type="range" id="margin" min="0" max="{{ max_margin }}" value="{{ default_margin }}">
+                    </div>
                 </div>
-                
+
+                <div class="upload-area" id="drop-zone" tabindex="0" role="button" aria-label="Select photos">
+                    <i class="fa-solid fa-cloud-arrow-up main-icon"></i>
+                    <div class="upload-text" id="upload-text">Click to select photos</div>
+                    <div class="upload-subtext" id="upload-subtext">or drag them here (JPG, PNG, WEBP, HEIC)</div>
+                    <div class="thumbnail-gallery" id="thumbnail-gallery"></div>
+                    <input type="file" id="file-input" accept="image/*,.heic,.heif" multiple>
+                </div>
+
                 <button type="submit" class="btn btn-primary" id="submit-btn">
                     <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Preview
                 </button>
+                <div><button type="button" class="link-btn" id="clear-btn" hidden>Remove all photos</button></div>
             </form>
         </div>
 
     </div>
 
     <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            const fileInput = document.getElementById('file-input');
-            const dropZone = document.getElementById('drop-zone');
-            const gallery = document.getElementById('thumbnail-gallery');
-            const uploadText = document.getElementById('upload-text');
-            const uploadSubtext = document.getElementById('upload-subtext');
-            const uploadForm = document.getElementById('upload-form');
-            const previewSection = document.getElementById('preview-section');
-            const uploadSection = document.getElementById('upload-section');
-            const submitBtn = document.getElementById('submit-btn');
-            const previewContent = document.getElementById('preview-content');
-            
-            let selectedFilesArray = [];
+        document.addEventListener("DOMContentLoaded", function () {
+            const $ = (id) => document.getElementById(id);
+            const root = document.querySelector(".container");
+            const previewUrl = root.dataset.previewUrl;
+            const pdfUrl = root.dataset.pdfUrl;
+            const maxPhotos = parseInt(root.dataset.maxPhotos, 10);
+            const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]").value;
 
-            if(dropZone && fileInput) {
-                dropZone.addEventListener('click', function(e) {
-                    if (!e.target.closest('.delete-btn') && !e.target.closest('.thumb-wrapper')) {
-                        fileInput.click();
-                    }
-                });
+            const fileInput = $("file-input");
+            const dropZone = $("drop-zone");
+            const gallery = $("thumbnail-gallery");
+            const uploadText = $("upload-text");
+            const uploadSubtext = $("upload-subtext");
+            const uploadForm = $("upload-form");
+            const uploadSection = $("upload-section");
+            const previewSection = $("preview-section");
+            const previewContent = $("preview-content");
+            const submitBtn = $("submit-btn");
+            const downloadBtn = $("download-btn");
+            const clearBtn = $("clear-btn");
+            const marginInput = $("margin");
 
-                fileInput.addEventListener('change', function() {
-                    const files = this.files;
-                    for(let i = 0; i < files.length; i++) {
-                        selectedFilesArray.push(files[i]);
-                    }
-                    this.value = ""; 
-                    updateGallery();
+            let files = [];                 // File objects, in the order they will be placed
+            const thumbUrls = new Map();    // File -> object URL (revoked when the file is removed)
+            let pagesBase64 = [];           // pages returned by the last preview
+            let dragIndex = null;           // index of the thumbnail being re-ordered
+
+            // ---------- helpers ----------
+            function showAlerts(container, items) {
+                container.replaceChildren();
+                items.forEach(function (item) {
+                    const div = document.createElement("div");
+                    div.className = "alert alert-" + item.kind;
+                    div.textContent = item.text;   // textContent: file names are never parsed as HTML
+                    container.appendChild(div);
                 });
             }
 
-            function updateGallery() {
-                gallery.innerHTML = '';
-                const fileCount = selectedFilesArray.length;
-
-                if(fileCount > 0) {
-                    dropZone.classList.add('active');
-                    uploadText.innerHTML = `<span style="color: var(--success); font-size: 18px;"><i class="fa-solid fa-circle-check"></i> ${fileCount} Photo(s) Ready!</span>`;
-                    uploadSubtext.innerText = "Click empty space to add MORE photos";
-
-                    selectedFilesArray.forEach((file, index) => {
-                        const wrapper = document.createElement('div');
-                        wrapper.className = 'thumb-wrapper';
-
-                        const imgUrl = URL.createObjectURL(file);
-                        const img = document.createElement('img');
-                        img.src = imgUrl;
-
-                        const deleteBtn = document.createElement('button');
-                        deleteBtn.className = 'delete-btn';
-                        deleteBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
-                        
-                        deleteBtn.onclick = function(e) {
-                            e.preventDefault(); 
-                            e.stopPropagation();
-                            selectedFilesArray.splice(index, 1);
-                            updateGallery();
-                        };
-
-                        wrapper.appendChild(img);
-                        wrapper.appendChild(deleteBtn);
-                        gallery.appendChild(wrapper);
-                    });
+            function setBusy(button, busy, label) {
+                if (busy) {
+                    button.dataset.original = button.innerHTML;
+                    button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> ' + label;
+                    button.disabled = true;
                 } else {
-                    dropZone.classList.remove('active');
-                    uploadText.innerText = "Click to select photos";
-                    uploadSubtext.innerText = "Supports JPG, PNG, WEBP (Select multiple)";
+                    button.innerHTML = button.dataset.original || button.innerHTML;
+                    button.disabled = false;
                 }
             }
 
-            // AJAX Form Submission (Bina page refresh kiye)
-            if (uploadForm) {
-                uploadForm.addEventListener('submit', function(e) {
-                    e.preventDefault();
-                    
-                    if (selectedFilesArray.length === 0) {
-                        alert("Please select at least one photo!");
-                        return;
+            async function readJson(response) {
+                try { return await response.json(); } catch (e) { return {}; }
+            }
+
+            function fileKey(file) {
+                return file.name + "|" + file.size + "|" + file.lastModified;
+            }
+
+            function isImage(file) {
+                return file.type.startsWith("image/") || /\.(heic|heif)$/i.test(file.name);
+            }
+
+            // ---------- photo list ----------
+            function addFiles(list) {
+                const known = new Set(files.map(fileKey));
+                const notes = [];
+                let ignored = 0;
+                for (const file of list) {
+                    if (!isImage(file)) { ignored++; continue; }
+                    if (known.has(fileKey(file))) continue;
+                    if (files.length >= maxPhotos) {
+                        notes.push({ kind: "warning", text: "Only " + maxPhotos + " photos are allowed. Extra photos were not added." });
+                        break;
                     }
-                    
-                    // Final files form mein dalo
-                    const dataTransfer = new DataTransfer();
-                    selectedFilesArray.forEach(file => dataTransfer.items.add(file));
-                    fileInput.files = dataTransfer.files;
+                    files.push(file);
+                    known.add(fileKey(file));
+                }
+                if (ignored) notes.push({ kind: "warning", text: ignored + " file(s) were not images and were ignored." });
+                showAlerts($("upload-alerts"), notes);
+                renderGallery();
+            }
 
-                    const formData = new FormData(this);
-                    formData.append('is_ajax', '1'); // Backend ko pata chale JSON dena hai
+            function removeFile(index) {
+                const file = files[index];
+                if (thumbUrls.has(file)) { URL.revokeObjectURL(thumbUrls.get(file)); thumbUrls.delete(file); }
+                files.splice(index, 1);
+                renderGallery();
+            }
 
-                    // Loading Spinner Dikhao
-                    const originalText = submitBtn.innerHTML;
-                    submitBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating Preview...';
-                    submitBtn.disabled = true;
+            function moveFile(from, to) {
+                if (from === to || from === null) return;
+                const moved = files.splice(from, 1)[0];
+                files.splice(to, 0, moved);
+                renderGallery();
+            }
 
-                    // Background Request (Fetch API)
-                    fetch('', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if(data.status === 'success') {
-                            previewContent.innerHTML = '';
-                            
-                            // Nayi images aur hidden fields add karo
-                            data.pages_base64.forEach((b64, index) => {
-                                previewContent.innerHTML += `<input type="hidden" name="pdf_pages" value="${b64}">`;
-                                previewContent.innerHTML += `<img class="page-preview" src="data:image/jpeg;base64,${b64}" alt="Page ${index + 1}">`;
-                            });
+            function thumbUrl(file) {
+                if (!thumbUrls.has(file)) thumbUrls.set(file, URL.createObjectURL(file));
+                return thumbUrls.get(file);
+            }
 
-                            // Upload form chupao, Preview form dikhao
-                            uploadSection.style.display = 'none';
-                            previewSection.style.display = 'block';
-                        }
-                    })
-                    .catch(error => {
-                        alert("Something went wrong!");
-                        console.error(error);
-                    })
-                    .finally(() => {
-                        // Button wapas theek kar do
-                        submitBtn.innerHTML = originalText;
-                        submitBtn.disabled = false;
+            function renderGallery() {
+                gallery.replaceChildren();
+                const count = files.length;
+                clearBtn.hidden = count === 0;
+
+                if (count === 0) {
+                    dropZone.classList.remove("active");
+                    uploadText.textContent = "Click to select photos";
+                    uploadSubtext.textContent = "or drag them here (JPG, PNG, WEBP, HEIC)";
+                    return;
+                }
+
+                dropZone.classList.add("active");
+                uploadText.innerHTML = '<span style="color: var(--success); font-size: 18px;"><i class="fa-solid fa-circle-check"></i> ' + count + ' Photo(s) Ready!</span>';
+                uploadSubtext.textContent = "Drag a photo to change its position. Click empty space to add more.";
+
+                files.forEach(function (file, index) {
+                    const wrapper = document.createElement("div");
+                    wrapper.className = "thumb-wrapper";
+                    wrapper.draggable = true;
+                    wrapper.title = file.name;
+
+                    const img = document.createElement("img");
+                    img.src = thumbUrl(file);
+                    img.alt = file.name;
+                    img.loading = "lazy";
+                    img.decoding = "async";
+                    img.draggable = false;
+
+                    const badge = document.createElement("span");
+                    badge.className = "order-badge";
+                    badge.textContent = String(index + 1);
+
+                    const deleteBtn = document.createElement("button");
+                    deleteBtn.type = "button";
+                    deleteBtn.className = "delete-btn";
+                    deleteBtn.setAttribute("aria-label", "Remove " + file.name);
+                    deleteBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+                    deleteBtn.addEventListener("click", function (e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        removeFile(index);
                     });
+
+                    wrapper.addEventListener("dragstart", function (e) {
+                        dragIndex = index;
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", String(index));
+                        wrapper.classList.add("dragging");
+                    });
+                    wrapper.addEventListener("dragend", function () {
+                        dragIndex = null;
+                        wrapper.classList.remove("dragging");
+                    });
+                    wrapper.addEventListener("dragover", function (e) {
+                        if (dragIndex === null) return;
+                        e.preventDefault();
+                        wrapper.classList.add("drag-target");
+                    });
+                    wrapper.addEventListener("dragleave", function () {
+                        wrapper.classList.remove("drag-target");
+                    });
+                    wrapper.addEventListener("drop", function (e) {
+                        if (dragIndex === null) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        moveFile(dragIndex, index);
+                        dragIndex = null;
+                    });
+
+                    wrapper.appendChild(img);
+                    wrapper.appendChild(badge);
+                    wrapper.appendChild(deleteBtn);
+                    gallery.appendChild(wrapper);
                 });
             }
 
-            // Go Back Button logic (Data safe rakhega)
-            document.getElementById('go-back-btn').addEventListener('click', function() {
-                previewSection.style.display = 'none';
-                uploadSection.style.display = 'block';
+            // ---------- picking files ----------
+            dropZone.addEventListener("click", function (e) {
+                if (!e.target.closest(".thumb-wrapper")) fileInput.click();
+            });
+            dropZone.addEventListener("keydown", function (e) {
+                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+            });
+            fileInput.addEventListener("change", function () {
+                addFiles(Array.from(this.files));
+                this.value = "";
+            });
+            dropZone.addEventListener("dragover", function (e) {
+                if (dragIndex !== null) return;          // re-ordering, not adding files
+                e.preventDefault();
+                dropZone.classList.add("drag-over");
+            });
+            dropZone.addEventListener("dragleave", function () { dropZone.classList.remove("drag-over"); });
+            dropZone.addEventListener("drop", function (e) {
+                dropZone.classList.remove("drag-over");
+                if (dragIndex !== null) return;
+                e.preventDefault();
+                addFiles(Array.from(e.dataTransfer.files));
+            });
+            clearBtn.addEventListener("click", function () {
+                thumbUrls.forEach(function (url) { URL.revokeObjectURL(url); });
+                thumbUrls.clear();
+                files = [];
+                showAlerts($("upload-alerts"), []);
+                renderGallery();
+            });
+            marginInput.addEventListener("input", function () { $("margin-value").textContent = this.value; });
+
+            // ---------- generate preview ----------
+            uploadForm.addEventListener("submit", async function (e) {
+                e.preventDefault();
+                showAlerts($("upload-alerts"), []);
+                if (files.length === 0) {
+                    showAlerts($("upload-alerts"), [{ kind: "error", text: "Please select at least one photo." }]);
+                    return;
+                }
+
+                const formData = new FormData();
+                files.forEach(function (file) { formData.append("images", file, file.name); });
+                formData.append("header_text", $("header-text").value);
+                formData.append("footer_text", $("footer-text").value);
+                formData.append("page_size", $("page-size").value);
+                formData.append("margin", marginInput.value);
+
+                setBusy(submitBtn, true, "Generating Preview...");
+                try {
+                    const response = await fetch(previewUrl, {
+                        method: "POST",
+                        body: formData,
+                        headers: { "X-CSRFToken": csrfToken }
+                    });
+                    const data = await readJson(response);
+                    if (!response.ok || data.status !== "success") {
+                        const notes = [{ kind: "error", text: data.message || "Server error (" + response.status + "). Please try again." }];
+                        (data.skipped || []).forEach(function (name) { notes.push({ kind: "warning", text: "Skipped: " + name }); });
+                        showAlerts($("upload-alerts"), notes);
+                        return;
+                    }
+                    showPreview(data);
+                } catch (err) {
+                    showAlerts($("upload-alerts"), [{ kind: "error", text: "Could not reach the server. Check your connection and try again." }]);
+                } finally {
+                    setBusy(submitBtn, false);
+                }
+            });
+
+            function showPreview(data) {
+                pagesBase64 = data.pages_base64;
+                previewContent.replaceChildren();
+                pagesBase64.forEach(function (b64, index) {
+                    const img = document.createElement("img");
+                    img.className = "page-preview";
+                    img.alt = "Page " + (index + 1);
+                    img.src = "data:image/jpeg;base64," + b64;
+                    previewContent.appendChild(img);
+                });
+
+                const notes = [];
+                (data.skipped || []).forEach(function (name) { notes.push({ kind: "warning", text: "Skipped: " + name }); });
+                (data.warnings || []).forEach(function (text) { notes.push({ kind: "warning", text: text }); });
+                showAlerts($("preview-alerts"), notes);
+
+                uploadSection.style.display = "none";
+                previewSection.style.display = "block";
+                window.scrollTo(0, 0);
+            }
+
+            $("go-back-btn").addEventListener("click", function () {
+                previewSection.style.display = "none";
+                uploadSection.style.display = "block";
+            });
+
+            // ---------- download PDF ----------
+            downloadBtn.addEventListener("click", async function () {
+                showAlerts($("preview-alerts"), []);
+                setBusy(downloadBtn, true, "Preparing PDF...");
+                try {
+                    const formData = new FormData();
+                    for (let i = 0; i < pagesBase64.length; i++) {
+                        const blob = await (await fetch("data:image/jpeg;base64," + pagesBase64[i])).blob();
+                        formData.append("pages", blob, "page-" + (i + 1) + ".jpg");
+                    }
+                    const response = await fetch(pdfUrl, {
+                        method: "POST",
+                        body: formData,
+                        headers: { "X-CSRFToken": csrfToken }
+                    });
+                    if (!response.ok) {
+                        const data = await readJson(response);
+                        throw new Error(data.message || "Server error (" + response.status + ").");
+                    }
+                    const url = URL.createObjectURL(await response.blob());
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = "my_pro_collage.pdf";
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+                } catch (err) {
+                    showAlerts($("preview-alerts"), [{ kind: "error", text: err.message || "Could not download the PDF." }]);
+                } finally {
+                    setBusy(downloadBtn, false);
+                }
             });
         });
     </script>
