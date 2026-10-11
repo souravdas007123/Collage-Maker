@@ -1,0 +1,5 @@
+Django>=6.1
+Pillow>=10.1
+
+# Optional: lets iPhone HEIC/HEIF photos be used
+# pillow-heif

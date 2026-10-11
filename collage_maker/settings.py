@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -18,14 +19,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
+# For production set the environment variables DJANGO_SECRET_KEY,
+# DJANGO_DEBUG=0 and DJANGO_ALLOWED_HOSTS=example.com,www.example.com
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-8-f684#wcr+k*q(pa!!(8zc+7ur^1u-@9fob2e_v#mkuvsg$9i'
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    'django-insecure-8-f684#wcr+k*q(pa!!(8zc+7ur^1u-@9fob2e_v#mkuvsg$9i',
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', '1').lower() in ('1', 'true', 'yes')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if h.strip()]
+
+# Django rejects requests with more than 100 uploaded files by default.
+DATA_UPLOAD_MAX_NUMBER_FILES = 200
 
 
 # Application definition
