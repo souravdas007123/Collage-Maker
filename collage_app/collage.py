@@ -9,19 +9,24 @@ Pipeline
     4. images_to_pdf()  -> wrap the page JPEGs in a PDF without re-encoding them
 """
 
+import math
 import os
+import sys
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps, UnidentifiedImageError
 
+HEIF_SUPPORTED = False
+HEIF_ERROR = ""
 try:  # lets iPhone HEIC/HEIF photos open; the app still works without it
     import pillow_heif
 
     pillow_heif.register_heif_opener()
-except Exception:  # not installed, or its native library failed to load
-    pass
+    HEIF_SUPPORTED = True
+except Exception as _exc:  # not installed, or its native library failed to load
+    HEIF_ERROR = f"{type(_exc).__name__}: {_exc}"[:200]
 
 DPI = 150
 BASE_PAGE_WIDTH = 1240  # A4 width in px at 150 DPI; sizes below are scaled from it
@@ -33,8 +38,17 @@ PAGE_SIZES = {
 DEFAULT_PAGE_SIZE = "A4"
 DEFAULT_MARGIN = 15
 MAX_MARGIN = 60
+# Smallest photo height (px at 150 DPI, A4; a guide, a few photos can end up a bit smaller) - so photos stay clearly visible; the rest go to the next page
+PHOTO_SIZES = {"small": 300, "normal": 440, "large": 600}
+DEFAULT_PHOTO_SIZE = "normal"
 JPEG_QUALITY = 90
 MAX_PDF_PAGE_PIXELS = 20_000_000
+
+SIGNATURE_POSITIONS = ("left", "center", "right")
+SIGNATURE_PAGES = ("last", "all")
+DEFAULT_SIGNATURE_HEIGHT = 100  # px, at A4 scale
+MIN_SIGNATURE_HEIGHT = 40
+MAX_SIGNATURE_HEIGHT = 200
 
 _ORIENTATION_TAG = 0x0112
 _ROTATED_ORIENTATIONS = {5, 6, 7, 8}
@@ -77,15 +91,22 @@ class Photo:
         self.size = (width, height)
         self.aspect = width / height
 
-    def render(self, width, height):
-        """Return the photo as an RGB image of exactly width x height, upright."""
+    def render(self, width, height, rotate=False):
+        """Return the photo as an RGB image of exactly width x height.
+
+        rotate=True turns it 90 degrees clockwise; width x height is then the size
+        AFTER turning (so the photo is first drawn upright at height x width).
+        """
+        if rotate:
+            width, height = height, width
         self._file.seek(0)
         with Image.open(self._file) as im:
             side = max(width, height)
             im.draft("RGB", (side, side))  # JPEG: decode at reduced size (much faster)
             im = ImageOps.exif_transpose(im)
             im = _to_rgb(im)
-            return im.resize((width, height), Image.Resampling.LANCZOS, reducing_gap=3.0)
+            im = im.resize((width, height), Image.Resampling.LANCZOS, reducing_gap=3.0)
+        return im.transpose(Image.Transpose.ROTATE_270) if rotate else im
 
 
 # --------------------------------------------------------------------------
@@ -207,6 +228,60 @@ def _banner_layer(size, header_text, footer_text, header_h, footer_h):
 
 
 # --------------------------------------------------------------------------
+# Signature stamp
+# --------------------------------------------------------------------------
+
+def _remove_paper(rgb):
+    """Turn a photo/scan of a signature on paper into dark ink on pure white.
+
+    The paper brightness is estimated locally (so shadows and uneven light are
+    ignored); only pixels clearly darker than their surroundings are kept.
+    """
+    gray = rgb.convert("L")
+    small = gray.resize((max(1, gray.width // 8), max(1, gray.height // 8)), Image.Resampling.BILINEAR)
+    small = small.filter(ImageFilter.MaxFilter(7)).filter(ImageFilter.GaussianBlur(2))
+    paper = small.resize(gray.size, Image.Resampling.BILINEAR)
+    darker = ImageChops.subtract(paper, gray)
+    alpha = darker.point(lambda v: 0 if v < 18 else min(255, (v - 18) * 255 // 80))
+    return Image.composite(rgb, Image.new("RGB", rgb.size, "white"), alpha)
+
+
+def load_signature(fileobj, clean=True):
+    """Return the signature as an RGB image: just the ink on white, cropped to the ink.
+
+    Transparent PNGs (e.g. drawn in the browser) are flattened onto white. For
+    photos/scans, clean=True removes the paper background first.
+    """
+    fileobj.seek(0)
+    with Image.open(fileobj) as source:
+        source.draft("RGB", (2000, 2000))
+        im = ImageOps.exif_transpose(source)
+        im.thumbnail((2000, 2000))
+        has_alpha = im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info)
+        rgb = _to_rgb(im)
+    if clean and not has_alpha:
+        rgb = _remove_paper(rgb)
+
+    ink = ImageChops.difference(rgb, Image.new("RGB", rgb.size, "white")).convert("L")
+    box = ink.point(lambda v: 255 if v > 24 else 0).getbbox()
+    if not box:
+        raise ValueError("The signature image has no visible ink.")
+    pad = 4
+    box = (max(0, box[0] - pad), max(0, box[1] - pad), min(rgb.width, box[2] + pad), min(rgb.height, box[3] + pad))
+    return rgb.crop(box)
+
+
+def _fit_signature(signature, height, page_w):
+    """Scale to the requested height, but never wider than 45% of the page."""
+    width = max(1, round(signature.width * height / signature.height))
+    max_width = round(page_w * 0.45)
+    if width > max_width:
+        width = max_width
+        height = max(1, round(signature.height * width / signature.width))
+    return signature.resize((width, height), Image.Resampling.LANCZOS)
+
+
+# --------------------------------------------------------------------------
 # Layout (geometry only)
 # --------------------------------------------------------------------------
 
@@ -239,7 +314,8 @@ def _plan_rows(ids, aspects, target_h, width, gap, max_h):
             h_with = raw_height(len(row) + 1, aspect_sum + a)
             # Adding this photo would make the row shorter than the target.
             # Close the row first if that lands nearer the target height.
-            if h_with < target_h and (h_without - target_h) <= (target_h - h_with) and h_without <= target_h * 1.25:
+            if h_with < target_h and h_without <= target_h * 1.25 and (
+                    (h_without - target_h) <= (target_h - h_with) or h_with < 0.92 * target_h):
                 rows.append((row, min(h_without, max_h), False))
                 row, aspect_sum = [], 0.0
         row.append(i)
@@ -267,8 +343,78 @@ def _paginate(rows, usable_h, gap):
     return pages
 
 
-def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
-    """Return pages -> list[Placement]."""
+def _dp_rows(ids, aspects, width, gap, limit, band_lo, band_hi, max_per_row=10):
+    """Exact row packing for ONE page.
+
+    Splits the photos (order kept) into full-width rows, each between band_lo and
+    band_hi tall, so that the total height is as large as possible without going
+    over `limit`. Photos keep their aspect ratio; nothing is cropped.
+    Returns (rows, total_height) or None when no split fits.
+    """
+    count = len(ids)
+    limit = int(limit)
+    mask = (1 << (limit + 1)) - 1
+    prefix = [0.0]
+    for i in ids:
+        prefix.append(prefix[-1] + aspects[i])
+
+    def row_height(j, i):
+        return (width - gap * (i - j - 1)) / (prefix[i] - prefix[j])
+
+    # reach[i] is a bit set: bit t is on when the first i photos can be laid out in exactly t px
+    reach = [0] * (count + 1)
+    reach[0] = 1
+    for i in range(1, count + 1):
+        bits = 0
+        for j in range(max(0, i - max_per_row), i):
+            if not reach[j]:
+                continue
+            h = row_height(j, i)
+            if h < band_lo or h > band_hi:
+                continue
+            bits |= (reach[j] << (math.ceil(h) + (gap if j else 0))) & mask
+        reach[i] = bits
+    if not reach[count]:
+        return None
+
+    total = reach[count].bit_length() - 1
+    rows, i, t = [], count, total
+    middle = (band_lo + band_hi) / 2
+    while i > 0:
+        best = None
+        for j in range(max(0, i - max_per_row), i):
+            h = row_height(j, i)
+            if h < band_lo or h > band_hi:
+                continue
+            step = math.ceil(h) + (gap if j else 0)
+            if t - step >= 0 and (reach[j] >> (t - step)) & 1:
+                if best is None or abs(h - middle) < abs(best[1] - middle):
+                    best = (j, h, step)
+        j, h, step = best
+        rows.append((ids[j:i], h, False))
+        i, t = j, t - step
+    rows.reverse()
+    return rows, total
+
+
+def _dp_best(ids, aspects, width, gap, limit, ref_hi, ref_lo, step, floor):
+    """Pick the exact packing that uses the page best.
+
+    Rows may differ in height by at most about 1.8x (0.72 .. 1.28 of a reference), and none
+    may be shorter than `floor`. So no photo ends up tiny next to the others; if that cannot
+    be done on one page the caller moves the extra photos to the next page instead.
+    """
+    best, ref = None, ref_hi
+    while ref >= ref_lo:
+        found = _dp_rows(ids, aspects, width, gap, limit, max(floor, ref * 0.72), min(limit, ref * 1.28))
+        if found and (best is None or found[1] > best[1]):
+            best = found
+        ref -= step
+    return best
+
+
+def _layout(aspects, page_w, page_h, margin, header_h, footer_h, min_h=PHOTO_SIZES[DEFAULT_PHOTO_SIZE]):
+    """Return pages -> list[Placement]. Everything is packed from the top of the page down."""
     count = len(aspects)
     usable_w = page_w - 2 * margin
     usable_h = page_h - 2 * margin - header_h - footer_h
@@ -276,10 +422,11 @@ def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
     gap = margin
     scale = page_w / BASE_PAGE_WIDTH
 
-    h_lo = max(40, round(220 * scale))
+    h_lo = max(40, round(min_h * scale))
     h_hi = usable_h if count == 1 else min(usable_h, round(800 * scale))
     h_hi = max(h_hi, h_lo)
     ids = list(range(count))
+    step = max(4, round(12 * scale))
 
     def paged(sub_ids, target_h):
         rows = _plan_rows(sub_ids, aspects, target_h, usable_w, gap, usable_h)
@@ -295,30 +442,28 @@ def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
             chosen_h, pages = target_h, candidate
             break
 
-    # Pages before the last: enlarge photos a little so the page is filled better.
+    def used(rows):
+        return sum(h for _, h, _ in rows) + gap * (len(rows) - 1)
+
+    # Everything on ONE page whenever an exact packing exists, and use the page as fully as possible.
+    single = _dp_best(ids, aspects, usable_w, gap, usable_h, h_hi, h_lo, step, h_lo)
+    if single and (len(pages) > 1 or single[1] > used(pages[0])):
+        pages = [single[0]]
+
+    # Pages before the last: repack exactly so the page is filled as far down as possible.
     refined = []
     for k, page_rows in enumerate(pages):
         if k < len(pages) - 1:
             page_ids = [i for row_ids, _, _ in page_rows for i in row_ids]
-            for target_h in range(min(int(h_hi), int(chosen_h * 1.2)), int(chosen_h), -2):
-                candidate = paged(page_ids, target_h)
-                if len(candidate) == 1 and not candidate[0][-1][2]:
-                    page_rows = candidate[0]
-                    break
+            better = _dp_best(page_ids, aspects, usable_w, gap, usable_h,
+                              min(h_hi, chosen_h * 1.3), chosen_h * 0.85, max(2, step // 2), h_lo)
+            if better and better[1] > used(page_rows):
+                page_rows = better[0]
         refined.append(page_rows)
 
     result = []
-    last = len(refined) - 1
-    for k, rows in enumerate(refined):
-        total = sum(h for _, h, _ in rows) + gap * (len(rows) - 1)
-        slack = max(0.0, usable_h - total)
-        extra = 0.0
-        if k < last and len(rows) > 1:
-            extra = min(slack / (len(rows) - 1), gap * 2)
-        total += extra * (len(rows) - 1)
-        slack = max(0.0, usable_h - total)
-        y = top + (slack / 2 if (k < last or last == 0) else 0.0)
-
+    for rows in refined:
+        y = float(top)
         placements = []
         for row_ids, h, _ in rows:
             row_w = sum(aspects[i] * h for i in row_ids) + gap * (len(row_ids) - 1)
@@ -329,9 +474,45 @@ def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
                 x0, x1 = round(x), round(x + w)
                 placements.append(Placement(i, x0, y0, max(1, x1 - x0), max(1, y1 - y0)))
                 x += w + gap
-            y += h + gap + extra
+            y += h + gap
         result.append(placements)
     return result
+
+
+def _coverage(layout, usable_w, usable_h):
+    """Share of the printable area (all pages) that is covered by photos."""
+    covered = sum(p.w * p.h for page in layout for p in page)
+    return covered / (len(layout) * usable_w * usable_h)
+
+
+def _best_layout(aspects, page_w, page_h, margin, header_h, footer_h, auto_rotate,
+                 min_h=PHOTO_SIZES[DEFAULT_PHOTO_SIZE]):
+    """Return (layout, rotated_flags). Tries turning photos 90 degrees if that fills the page better."""
+    usable_w = page_w - 2 * margin
+    usable_h = page_h - 2 * margin - header_h - footer_h
+
+    def run(flags):
+        turned = [1 / a if flag else a for a, flag in zip(aspects, flags)]
+        return _layout(turned, page_w, page_h, margin, header_h, footer_h, min_h)
+
+    upright = [False] * len(aspects)
+    best_layout = run(upright)
+    best_flags = upright
+    if not auto_rotate:
+        return best_layout, best_flags
+
+    base_pages = len(best_layout)
+    base_cover = _coverage(best_layout, usable_w, usable_h)
+    best_key = (base_pages, -base_cover)
+    for flags in ([a > 1.05 for a in aspects], [a < 0.95 for a in aspects]):  # all -> portrait, all -> landscape
+        if not any(flags):
+            continue
+        layout = run(flags)
+        cover = _coverage(layout, usable_w, usable_h)
+        better = len(layout) < base_pages or (len(layout) == base_pages and cover >= base_cover + 0.05)
+        if better and (len(layout), -cover) < best_key:
+            best_layout, best_flags, best_key = layout, flags, (len(layout), -cover)
+    return best_layout, best_flags
 
 
 # --------------------------------------------------------------------------
@@ -342,12 +523,38 @@ def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
 class Collage:
     pages: list = field(default_factory=list)  # PIL images
     skipped: list = field(default_factory=list)  # names of unreadable files
+    skipped_reasons: list = field(default_factory=list)  # why, same order as skipped
     warnings: list = field(default_factory=list)
+    rotated: int = 0  # photos turned 90 degrees to fill the page better
+
+
+def _skip_reason(name, exc):
+    if name.lower().endswith((".heic", ".heif")) and not HEIF_SUPPORTED:
+        if HEIF_ERROR.startswith("ModuleNotFoundError"):
+            return (
+                "pillow-heif is not installed for the Python this server runs on "
+                f"({sys.executable}). Run: pip install pillow-heif with that Python, then restart the server"
+            )
+        if "DLL load failed" in HEIF_ERROR or "Application Control" in HEIF_ERROR:
+            return (
+                "Windows blocked the HEIC library on this computer. The browser normally converts HEIC "
+                "photos itself; if that failed, save the photo as JPG and add it again"
+            )
+        return f"HEIC support failed to load ({HEIF_ERROR}). Server Python: {sys.executable}"
+    if isinstance(exc, UnidentifiedImageError):
+        return "not a readable image"
+    return f"could not be read as an image ({type(exc).__name__}: {str(exc).strip()[:100]})"
 
 
 def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
-                  header_text="", footer_text=""):
-    """sources: iterable of (name, seekable file object). Photo order is kept."""
+                  header_text="", footer_text="", signature=None, signature_position="right",
+                  signature_height=DEFAULT_SIGNATURE_HEIGHT, signature_pages="all",
+                  signature_clean=True, auto_rotate=True, photo_size=DEFAULT_PHOTO_SIZE):
+    """sources: iterable of (name, seekable file object). Photo order is kept.
+
+    signature: optional seekable image file. It is stamped in its own band above the
+    footer text, so it never covers a photo. Every page keeps the same margins.
+    """
     result = Collage()
     if page_size not in PAGE_SIZES:
         page_size = DEFAULT_PAGE_SIZE
@@ -358,27 +565,52 @@ def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
     for name, fileobj in sources:
         try:
             photos.append(Photo(name, fileobj))
-        except Exception:
+        except Exception as exc:
             result.skipped.append(name)
+            result.skipped_reasons.append(_skip_reason(name, exc))
     if not photos:
         return result
 
     scale = page_w / BASE_PAGE_WIDTH
     header_h = round(80 * scale) if header_text else 0
-    footer_h = round(70 * scale) if footer_text else 0
-    layer, result.warnings = _banner_layer((page_w, page_h), header_text, footer_text, header_h, footer_h)
+    footer_text_h = round(70 * scale) if footer_text else 0
 
-    layout = _layout([p.aspect for p in photos], page_w, page_h, margin, header_h, footer_h)
-    for placements in layout:
+    stamp, stamp_band = None, 0
+    if signature is not None:
+        try:
+            height = max(MIN_SIGNATURE_HEIGHT, min(int(signature_height), MAX_SIGNATURE_HEIGHT))
+            stamp = _fit_signature(load_signature(signature, clean=signature_clean), round(height * scale), page_w)
+            stamp_band = stamp.height + 2 * round(10 * scale)
+        except Exception:
+            result.warnings.append("The signature image could not be read, so it was not added.")
+    if signature_position not in SIGNATURE_POSITIONS:
+        signature_position = "right"
+    footer_h = footer_text_h + stamp_band
+
+    layer, banner_warnings = _banner_layer((page_w, page_h), header_text, footer_text, header_h, footer_text_h)
+    result.warnings = banner_warnings + result.warnings
+
+    stamp_xy = None
+    if stamp:
+        side = max(margin, round(30 * scale))
+        x = {"left": side, "center": (page_w - stamp.width) // 2, "right": page_w - side - stamp.width}[signature_position]
+        stamp_xy = (x, page_h - footer_h + (stamp_band - stamp.height) // 2)
+
+    layout, rotated = _best_layout([p.aspect for p in photos], page_w, page_h, margin, header_h, footer_h, auto_rotate,
+                                   PHOTO_SIZES.get(photo_size, PHOTO_SIZES[DEFAULT_PHOTO_SIZE]))
+    result.rotated = sum(rotated)
+    for index, placements in enumerate(layout):
         page = layer.copy()
         for p in placements:
             try:
-                tile = photos[p.idx].render(p.w, p.h)
+                tile = photos[p.idx].render(p.w, p.h, rotate=rotated[p.idx])
             except Exception:
                 tile = Image.new("RGB", (p.w, p.h), "#e5e7eb")
                 result.warnings.append(f"{photos[p.idx].name} could not be fully read.")
             page.paste(tile, (p.x, p.y))
             tile.close()
+        if stamp_xy and (signature_pages == "all" or index == len(layout) - 1):
+            page.paste(stamp, stamp_xy)
         result.pages.append(page)
     return result
 

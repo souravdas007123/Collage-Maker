@@ -14,6 +14,7 @@ MAX_PHOTO_BYTES = 30 * 1024 * 1024
 MAX_PDF_PAGES = 150
 MAX_PAGE_BYTES = 15 * 1024 * 1024
 MAX_TEXT_LENGTH = 100
+MAX_SIGNATURE_BYTES = 10 * 1024 * 1024
 
 
 def _error(message, status=400, **extra):
@@ -32,6 +33,16 @@ def _int(value, default, low, high):
         return default
 
 
+def _notes(result):
+    if not result.rotated:
+        return []
+    count = result.rotated
+    return [
+        f"{count} photo{'s were' if count != 1 else ' was'} turned 90° clockwise so the page is used better. "
+        "Untick \"Turn photos to fill the page\" to keep every photo upright."
+    ]
+
+
 @require_GET
 def collage_page(request):
     return render(
@@ -43,6 +54,10 @@ def collage_page(request):
             "max_margin": collage.MAX_MARGIN,
             "max_photos": MAX_PHOTOS,
             "max_text": MAX_TEXT_LENGTH,
+            "server_heic": collage.HEIF_SUPPORTED,
+            "sig_min": collage.MIN_SIGNATURE_HEIGHT,
+            "sig_max": collage.MAX_SIGNATURE_HEIGHT,
+            "sig_default": collage.DEFAULT_SIGNATURE_HEIGHT,
         },
     )
 
@@ -63,6 +78,13 @@ def create_preview(request):
         else:
             sources.append((f.name, f))
 
+    signature = request.FILES.get("signature")
+    signature_note = []
+    if signature is not None and signature.size > MAX_SIGNATURE_BYTES:
+        signature_note.append("The signature image is larger than 10 MB, so it was not added.")
+        signature = None
+
+    signature_pages = request.POST.get("signature_pages", "all")
     try:
         result = collage.build_collage(
             sources,
@@ -70,12 +92,24 @@ def create_preview(request):
             margin=_int(request.POST.get("margin"), collage.DEFAULT_MARGIN, 0, collage.MAX_MARGIN),
             header_text=_clean_text(request.POST.get("header_text")),
             footer_text=_clean_text(request.POST.get("footer_text")),
+            signature=signature,
+            signature_position=request.POST.get("signature_position", "right"),
+            signature_height=_int(
+                request.POST.get("signature_size"),
+                collage.DEFAULT_SIGNATURE_HEIGHT,
+                collage.MIN_SIGNATURE_HEIGHT,
+                collage.MAX_SIGNATURE_HEIGHT,
+            ),
+            signature_pages=signature_pages if signature_pages in collage.SIGNATURE_PAGES else "all",
+            signature_clean=request.POST.get("signature_clean", "1") == "1",
+            auto_rotate=request.POST.get("auto_rotate", "1") == "1",
+            photo_size=request.POST.get("photo_size", collage.DEFAULT_PHOTO_SIZE),
         )
     except Exception:
         logger.exception("Collage generation failed")
         return _error("Could not create the collage. Please try fewer or smaller photos.", status=500)
 
-    skipped += [f"{name} (not a readable image)" for name in result.skipped]
+    skipped += [f"{name} ({reason})" for name, reason in zip(result.skipped, result.skipped_reasons)]
     if not result.pages:
         return _error("None of the selected files could be read as images.", skipped=skipped)
 
@@ -84,7 +118,8 @@ def create_preview(request):
             "status": "success",
             "pages_base64": [base64.b64encode(collage.jpeg_bytes(p)).decode("ascii") for p in result.pages],
             "skipped": skipped,
-            "warnings": result.warnings,
+            "warnings": signature_note + result.warnings,
+            "notes": _notes(result),
         }
     )
 

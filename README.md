@@ -6,9 +6,19 @@ A Django app that turns many photos into a tight, print-ready collage PDF (A4, A
 - Upload by clicking or drag-and-drop; drag thumbnails to change the order
 - Optional header and footer text (Hindi, Bangla and other scripts work if a matching font is installed)
 - Page size and spacing options
-- Phone photos are rotated correctly (EXIF), transparent PNGs get a white background
-- iPhone HEIC/HEIF photos work (installed via `pillow-heif` in requirements.txt). Chrome and Firefox cannot
-  preview HEIC, so those photos show a placeholder thumbnail, but they are still used in the collage
+- Uses the page fully: photos start at the very top and are packed down the page with an exact search, keeping
+  every photo's aspect ratio (nothing is cropped or stretched). It tries to put everything on ONE page, but never by
+  making photos tiny: pick a "Photo size" (Small / Normal / Large, default Normal = about 3 inch tall) and any
+  photos that would have to be smaller go to the next page Space for header, footer and signature exists only when you use them
+  (header text gets padding above and below it, then the photos start)
+- "Turn photos 90 degrees to fill the page" (on by default) rotates photos clockwise only when that leaves
+  clearly less empty space and never needs more pages; untick it to keep every photo upright
+- iPhone HEIC/HEIF photos work. If the server can open them (via `pillow-heif`) they are used directly;
+  otherwise (for example when Windows Application Control blocks the native library) the browser converts
+  them to JPEG before upload. That needs internet access once, to load the converter from a CDN
+- Signature stamp in the footer: upload an image (a photo of your signature on paper works; the paper
+  background is removed) or draw it with mouse/finger. Choose left/center/right, size, and every page (default) or last page only.
+  It gets its own band above the footer text, so it never covers a photo
 - Live preview; the PDF contains exactly the preview images (no second JPEG compression)
 
 ## Run it

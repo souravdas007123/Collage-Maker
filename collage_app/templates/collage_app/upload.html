@@ -47,6 +47,7 @@
         .thumbnail-gallery { display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; margin-top: 20px; }
         .thumb-wrapper { position: relative; display: inline-block; cursor: grab; }
         .thumb-wrapper img { width: 70px; height: 70px; object-fit: cover; border-radius: 8px; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: block; }
+        .add-tile { width: 70px; height: 70px; box-sizing: content-box; border-radius: 8px; border: 2px dashed var(--success); color: var(--success); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 700; cursor: pointer; background: white; }
         .thumb-placeholder { width: 70px; height: 70px; box-sizing: content-box; border-radius: 8px; border: 2px solid white; background: #e2e8f0; color: var(--text-muted); box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
         .thumb-placeholder i { font-size: 20px; }
         .thumb-wrapper.dragging { opacity: 0.35; }
@@ -66,10 +67,27 @@
         .btn-danger:hover { background: #fef2f2; }
         .btn:disabled { opacity: 0.7; cursor: not-allowed; }
 
+        [hidden] { display: none !important; }
+        .signature-box { text-align: left; border: 1px solid var(--border-color); border-radius: 12px; padding: 18px 20px; margin-bottom: 25px; background: #fafafa; }
+        .signature-box > label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 12px; }
+        .signature-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+        .btn-outline { background: white; color: var(--primary); border: 1px solid #c7d2fe; padding: 10px 18px; font-size: 14px; }
+        .btn-outline:hover { background: #eef2ff; }
+        .btn-small { padding: 8px 16px; font-size: 14px; }
+        .sig-pad { margin-top: 14px; }
+        .sig-pad canvas { width: 100%; max-width: 700px; height: auto; background: white; border: 2px dashed #cbd5e1; border-radius: 10px; touch-action: none; cursor: crosshair; display: block; }
+        .sig-pad-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
+        .sig-pad-tools input[type="color"] { width: 38px; height: 34px; padding: 0; border: 1px solid var(--border-color); border-radius: 6px; background: white; cursor: pointer; }
+        .sig-preview { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+        .sig-preview img { max-height: 70px; max-width: 220px; background: white; border: 1px solid var(--border-color); border-radius: 8px; padding: 6px; }
+        .sig-options { margin-top: 14px; }
+        .sig-options .form-row { margin-bottom: 12px; }
+        .check-row { display: flex; align-items: center; gap: 8px; font-size: 14px; }
         .alerts:empty { display: none; }
         .alerts { margin-bottom: 20px; text-align: left; }
         .alert { border-radius: 8px; padding: 12px 16px; font-size: 14px; margin-bottom: 10px; border: 1px solid; }
         .alert-error { background: var(--error-bg); border-color: var(--error-border); color: var(--error-text); }
+        .alert-info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
         .alert-warning { background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-text); }
 
         .preview-header { display: flex; align-items: center; justify-content: space-between; background: white; padding: 20px 30px; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); text-align: left; }
@@ -90,7 +108,8 @@
     <div class="container"
          data-preview-url="{% url 'create_preview' %}"
          data-pdf-url="{% url 'download_pdf' %}"
-         data-max-photos="{{ max_photos }}">
+         data-max-photos="{{ max_photos }}"
+         data-server-heic="{{ server_heic|yesno:'1,0' }}">
 
         <!-- PREVIEW SECTION -->
         <div id="preview-section">
@@ -141,6 +160,69 @@
                     </div>
                 </div>
 
+                <div class="form-group">
+                    <label for="photo-size"><i class="fa-solid fa-expand"></i> Photo size (bigger photos = more pages)</label>
+                    <select class="form-control" id="photo-size">
+                        <option value="small">Small - most photos per page</option>
+                        <option value="normal" selected>Normal - clear to see (recommended)</option>
+                        <option value="large">Large - few photos per page</option>
+                    </select>
+                </div>
+
+                <label class="check-row" style="margin-bottom: 25px; text-align: left;">
+                    <input type="checkbox" id="auto-rotate" checked>
+                    <span>Turn photos 90&deg; to fill the page (only when it leaves less empty space)</span>
+                </label>
+
+                <div class="signature-box">
+                    <label><i class="fa-solid fa-signature"></i> Signature in footer (Optional)</label>
+                    <div class="signature-actions">
+                        <button type="button" class="btn btn-outline" id="sig-upload-btn"><i class="fa-solid fa-upload"></i> Upload image</button>
+                        <button type="button" class="btn btn-outline" id="sig-draw-btn"><i class="fa-solid fa-pen-nib"></i> Draw signature</button>
+                        <input type="file" id="sig-file-input" accept="image/*,.heic,.heif" hidden>
+                    </div>
+
+                    <div class="sig-pad" id="sig-pad" hidden>
+                        <canvas id="sig-canvas" width="700" height="220"></canvas>
+                        <div class="sig-pad-tools">
+                            <input type="color" id="sig-color" value="#111827" title="Pen colour" aria-label="Pen colour">
+                            <button type="button" class="btn btn-outline btn-small" id="sig-clear-btn">Clear</button>
+                            <button type="button" class="btn btn-primary btn-small" id="sig-use-btn"><i class="fa-solid fa-check"></i> Use this signature</button>
+                            <button type="button" class="link-btn" id="sig-cancel-btn" style="margin-top:0;">Cancel</button>
+                        </div>
+                    </div>
+
+                    <div class="sig-preview" id="sig-preview" hidden>
+                        <img id="sig-preview-img" alt="Signature preview">
+                        <button type="button" class="link-btn" id="sig-remove-btn" style="margin-top:0;">Remove signature</button>
+                    </div>
+
+                    <div class="sig-options" id="sig-options" hidden>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="sig-position">Position</label>
+                                <select class="form-control" id="sig-position">
+                                    <option value="right" selected>Right</option>
+                                    <option value="center">Center</option>
+                                    <option value="left">Left</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="sig-pages">Show on</label>
+                                <select class="form-control" id="sig-pages">
+                                    <option value="last">Last page only</option>
+                                    <option value="all" selected>Every page</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 12px;">
+                            <label for="sig-size">Size: <span class="range-value" id="sig-size-value">{{ sig_default }}</span></label>
+                            <input type="range" id="sig-size" min="{{ sig_min }}" max="{{ sig_max }}" value="{{ sig_default }}">
+                        </div>
+                        <label class="check-row"><input type="checkbox" id="sig-clean" checked> Remove paper background (for a photo or scan of a signature)</label>
+                    </div>
+                </div>
+
                 <div class="upload-area" id="drop-zone" tabindex="0" role="button" aria-label="Select photos">
                     <i class="fa-solid fa-cloud-arrow-up main-icon"></i>
                     <div class="upload-text" id="upload-text">Click to select photos</div>
@@ -165,6 +247,7 @@
             const previewUrl = root.dataset.previewUrl;
             const pdfUrl = root.dataset.pdfUrl;
             const maxPhotos = parseInt(root.dataset.maxPhotos, 10);
+            const serverHeic = root.dataset.serverHeic === "1";   // can the server open HEIC itself?
             const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]").value;
 
             const fileInput = $("file-input");
@@ -212,30 +295,85 @@
                 try { return await response.json(); } catch (e) { return {}; }
             }
 
-            function fileKey(file) {
-                return file.name + "|" + file.size + "|" + file.lastModified;
-            }
-
             function isImage(file) {
                 return file.type.startsWith("image/") || /\.(heic|heif)$/i.test(file.name);
             }
 
             // ---------- photo list ----------
-            function addFiles(list) {
-                const known = new Set(files.map(fileKey));
+            // ---------- HEIC: converted to JPEG in the browser when the server cannot open it ----------
+            const HEIC_NAME = /\.(heic|heif)$/i;
+            function isHeic(file) {
+                return /^image\/hei[cf]/i.test(file.type) || HEIC_NAME.test(file.name);
+            }
+
+            let heicLoader = null;
+            function loadHeicConverter() {
+                if (window.heic2any) return Promise.resolve(window.heic2any);
+                if (heicLoader) return heicLoader;
+                const urls = [
+                    "https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js",
+                    "https://unpkg.com/heic2any@0.0.4/dist/heic2any.min.js",
+                    "https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js"
+                ];
+                heicLoader = (async function () {
+                    for (const url of urls) {
+                        try {
+                            await new Promise(function (resolve, reject) {
+                                const script = document.createElement("script");
+                                script.src = url;
+                                script.onload = resolve;
+                                script.onerror = reject;
+                                document.head.appendChild(script);
+                            });
+                            if (window.heic2any) return window.heic2any;
+                        } catch (e) { /* try the next address */ }
+                    }
+                    heicLoader = null;
+                    throw new Error("HEIC converter could not be loaded");
+                })();
+                return heicLoader;
+            }
+
+            async function convertHeic(file) {
+                const heic2any = await loadHeicConverter();
+                let result = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.92 });
+                if (Array.isArray(result)) result = result[0];
+                const jpg = new File([result], file.name.replace(HEIC_NAME, ".jpg"),
+                                     { type: "image/jpeg", lastModified: file.lastModified });
+                return jpg;
+            }
+
+            async function addFiles(list) {
                 const notes = [];
+                const incoming = [];
                 let ignored = 0;
                 for (const file of list) {
                     if (!isImage(file)) { ignored++; continue; }
-                    if (known.has(fileKey(file))) continue;
-                    if (files.length >= maxPhotos) {
+                    if (files.length + incoming.length >= maxPhotos) {
                         notes.push({ kind: "warning", text: "Only " + maxPhotos + " photos are allowed. Extra photos were not added." });
                         break;
                     }
-                    files.push(file);
-                    known.add(fileKey(file));
+                    incoming.push(file);
                 }
                 if (ignored) notes.push({ kind: "warning", text: ignored + " file(s) were not images and were ignored." });
+
+                const heicCount = serverHeic ? 0 : incoming.filter(isHeic).length;
+                if (heicCount) submitBtn.disabled = true;
+                let done = 0;
+                for (const file of incoming) {
+                    if (!serverHeic && isHeic(file)) {
+                        uploadSubtext.textContent = "Converting HEIC photos in your browser... " + (done + 1) + " of " + heicCount;
+                        try {
+                            files.push(await convertHeic(file));
+                        } catch (err) {
+                            notes.push({ kind: "warning", text: "Could not convert " + file.name + " in the browser. Please save it as a JPG first and add it again." });
+                        }
+                        done++;
+                    } else {
+                        files.push(file);
+                    }
+                }
+                if (heicCount) submitBtn.disabled = false;
                 showAlerts($("upload-alerts"), notes);
                 renderGallery();
             }
@@ -347,6 +485,13 @@
                     wrapper.appendChild(deleteBtn);
                     gallery.appendChild(wrapper);
                 });
+
+                // Always-visible way to add more photos, even when thumbnails cover the whole box.
+                const addTile = document.createElement("div");
+                addTile.className = "add-tile";
+                addTile.title = "Add more photos";
+                addTile.innerHTML = '<i class="fa-solid fa-plus"></i><span>Add more</span>';
+                gallery.appendChild(addTile);
             }
 
             // ---------- picking files ----------
@@ -357,8 +502,9 @@
                 if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
             });
             fileInput.addEventListener("change", function () {
-                addFiles(Array.from(this.files));
-                this.value = "";
+                const picked = Array.from(this.files);
+                this.value = "";            // allow choosing the same photo again later
+                return addFiles(picked);
             });
             dropZone.addEventListener("dragover", function (e) {
                 if (dragIndex !== null) return;          // re-ordering, not adding files
@@ -381,6 +527,97 @@
             });
             marginInput.addEventListener("input", function () { $("margin-value").textContent = this.value; });
 
+            // ---------- signature ----------
+            let signatureFile = null;
+            let signatureUrl = null;
+
+            function setSignature(file) {
+                if (signatureUrl) URL.revokeObjectURL(signatureUrl);
+                signatureFile = file;
+                signatureUrl = file ? URL.createObjectURL(file) : null;
+                $("sig-preview").hidden = !file;
+                $("sig-options").hidden = !file;
+                if (file) $("sig-preview-img").src = signatureUrl;
+            }
+
+            $("sig-upload-btn").addEventListener("click", function () { $("sig-file-input").click(); });
+            $("sig-file-input").addEventListener("change", async function () {
+                const file = this.files[0];
+                this.value = "";
+                if (!file) return;
+                if (!isImage(file)) {
+                    showAlerts($("upload-alerts"), [{ kind: "error", text: "The signature must be an image file." }]);
+                    return;
+                }
+                showAlerts($("upload-alerts"), []);
+                try {
+                    setSignature(!serverHeic && isHeic(file) ? await convertHeic(file) : file);
+                    $("sig-pad").hidden = true;
+                } catch (err) {
+                    showAlerts($("upload-alerts"), [{ kind: "error", text: "Could not use this signature image. Please save it as a JPG or PNG and try again." }]);
+                }
+            });
+            $("sig-remove-btn").addEventListener("click", function () { setSignature(null); });
+            $("sig-size").addEventListener("input", function () { $("sig-size-value").textContent = this.value; });
+
+            // drawing pad (mouse, pen and touch)
+            const canvas = $("sig-canvas");
+            const pen = canvas.getContext("2d");
+            let drawing = false;
+            let hasInk = false;
+
+            function canvasPoint(e) {
+                const rect = canvas.getBoundingClientRect();
+                return {
+                    x: (e.clientX - rect.left) * canvas.width / rect.width,
+                    y: (e.clientY - rect.top) * canvas.height / rect.height
+                };
+            }
+            canvas.addEventListener("pointerdown", function (e) {
+                e.preventDefault();
+                drawing = true;
+                hasInk = true;
+                if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+                const p = canvasPoint(e);
+                pen.strokeStyle = $("sig-color").value;
+                pen.lineWidth = 4;
+                pen.lineCap = "round";
+                pen.lineJoin = "round";
+                pen.beginPath();
+                pen.moveTo(p.x, p.y);
+                pen.lineTo(p.x + 0.1, p.y);   // a single tap leaves a dot
+                pen.stroke();
+            });
+            canvas.addEventListener("pointermove", function (e) {
+                if (!drawing) return;
+                const p = canvasPoint(e);
+                pen.lineTo(p.x, p.y);
+                pen.stroke();
+                pen.beginPath();
+                pen.moveTo(p.x, p.y);
+            });
+            function stopDrawing() { drawing = false; }
+            canvas.addEventListener("pointerup", stopDrawing);
+            canvas.addEventListener("pointercancel", stopDrawing);
+
+            $("sig-draw-btn").addEventListener("click", function () { $("sig-pad").hidden = false; });
+            $("sig-cancel-btn").addEventListener("click", function () { $("sig-pad").hidden = true; });
+            $("sig-clear-btn").addEventListener("click", function () {
+                pen.clearRect(0, 0, canvas.width, canvas.height);
+                hasInk = false;
+            });
+            $("sig-use-btn").addEventListener("click", function () {
+                if (!hasInk) {
+                    showAlerts($("upload-alerts"), [{ kind: "error", text: "Please draw your signature first." }]);
+                    return;
+                }
+                showAlerts($("upload-alerts"), []);
+                canvas.toBlob(function (blob) {
+                    setSignature(new File([blob], "signature.png", { type: "image/png" }));
+                    $("sig-pad").hidden = true;
+                }, "image/png");
+            });
+
             // ---------- generate preview ----------
             uploadForm.addEventListener("submit", async function (e) {
                 e.preventDefault();
@@ -396,6 +633,15 @@
                 formData.append("footer_text", $("footer-text").value);
                 formData.append("page_size", $("page-size").value);
                 formData.append("margin", marginInput.value);
+                formData.append("photo_size", $("photo-size").value);
+                formData.append("auto_rotate", $("auto-rotate").checked ? "1" : "0");
+                if (signatureFile) {
+                    formData.append("signature", signatureFile, signatureFile.name);
+                    formData.append("signature_position", $("sig-position").value);
+                    formData.append("signature_pages", $("sig-pages").value);
+                    formData.append("signature_size", $("sig-size").value);
+                    formData.append("signature_clean", $("sig-clean").checked ? "1" : "0");
+                }
 
                 setBusy(submitBtn, true, "Generating Preview...");
                 try {
@@ -431,6 +677,7 @@
                 });
 
                 const notes = [];
+                (data.notes || []).forEach(function (text) { notes.push({ kind: "info", text: text }); });
                 (data.skipped || []).forEach(function (name) { notes.push({ kind: "warning", text: "Skipped: " + name }); });
                 (data.warnings || []).forEach(function (text) { notes.push({ kind: "warning", text: text }); });
                 showAlerts($("preview-alerts"), notes);
