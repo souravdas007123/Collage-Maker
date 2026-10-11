@@ -548,7 +548,7 @@ def _skip_reason(name, exc):
 
 def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
                   header_text="", footer_text="", signature=None, signature_position="right",
-                  signature_height=DEFAULT_SIGNATURE_HEIGHT, signature_pages="last",
+                  signature_height=DEFAULT_SIGNATURE_HEIGHT, signature_pages="all",
                   signature_clean=True, auto_rotate=True, photo_size=DEFAULT_PHOTO_SIZE):
     """sources: iterable of (name, seekable file object). Photo order is kept.
 

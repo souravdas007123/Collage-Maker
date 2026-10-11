@@ -17,8 +17,8 @@ A Django app that turns many photos into a tight, print-ready collage PDF (A4, A
   otherwise (for example when Windows Application Control blocks the native library) the browser converts
   them to JPEG before upload. That needs internet access once, to load the converter from a CDN
 - Signature stamp in the footer: upload an image (a photo of your signature on paper works; the paper
-  background is removed) or draw it with mouse/finger. Choose left/center/right, size, and last page or
-  every page. It gets its own band above the footer text, so it never covers a photo
+  background is removed) or draw it with mouse/finger. Choose left/center/right, size, and every page (default) or last page only.
+  It gets its own band above the footer text, so it never covers a photo
 - Live preview; the PDF contains exactly the preview images (no second JPEG compression)
 
 ## Run it

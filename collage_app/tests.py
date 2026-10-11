@@ -68,15 +68,16 @@ class SignatureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             collage.load_signature(make_signature("blank"))
 
-    def test_signature_goes_on_last_page_only_by_default(self):
-        result = collage.build_collage(sources(120), auto_rotate=False, signature=make_signature("png"))
+    def test_signature_can_go_on_last_page_only(self):
+        result = collage.build_collage(sources(120), auto_rotate=False, signature=make_signature("png"), signature_pages="last")
         self.assertGreaterEqual(len(result.pages), 2)
         bottom = lambda page: page.crop((0, page.height - 100, page.width, page.height))
         self.assertIsNone(ink_box(bottom(result.pages[0])))
         self.assertIsNotNone(ink_box(bottom(result.pages[-1])))
 
-    def test_signature_on_every_page(self):
-        result = collage.build_collage(sources(120), auto_rotate=False, signature=make_signature("png"), signature_pages="all")
+    def test_signature_is_on_every_page_by_default(self):
+        result = collage.build_collage(sources(120), auto_rotate=False, signature=make_signature("png"))
+        self.assertGreaterEqual(len(result.pages), 2)
         for page in result.pages:
             self.assertIsNotNone(ink_box(page.crop((0, page.height - 100, page.width, page.height))))
 

@@ -84,7 +84,7 @@ def create_preview(request):
         signature_note.append("The signature image is larger than 10 MB, so it was not added.")
         signature = None
 
-    signature_pages = request.POST.get("signature_pages", "last")
+    signature_pages = request.POST.get("signature_pages", "all")
     try:
         result = collage.build_collage(
             sources,
@@ -100,7 +100,7 @@ def create_preview(request):
                 collage.MIN_SIGNATURE_HEIGHT,
                 collage.MAX_SIGNATURE_HEIGHT,
             ),
-            signature_pages=signature_pages if signature_pages in collage.SIGNATURE_PAGES else "last",
+            signature_pages=signature_pages if signature_pages in collage.SIGNATURE_PAGES else "all",
             signature_clean=request.POST.get("signature_clean", "1") == "1",
             auto_rotate=request.POST.get("auto_rotate", "1") == "1",
             photo_size=request.POST.get("photo_size", collage.DEFAULT_PHOTO_SIZE),
