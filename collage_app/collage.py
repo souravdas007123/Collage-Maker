@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps, UnidentifiedImageError
 
 HEIF_SUPPORTED = False
 HEIF_ERROR = ""
@@ -39,6 +39,12 @@ DEFAULT_MARGIN = 15
 MAX_MARGIN = 60
 JPEG_QUALITY = 90
 MAX_PDF_PAGE_PIXELS = 20_000_000
+
+SIGNATURE_POSITIONS = ("left", "center", "right")
+SIGNATURE_PAGES = ("last", "all")
+DEFAULT_SIGNATURE_HEIGHT = 100  # px, at A4 scale
+MIN_SIGNATURE_HEIGHT = 40
+MAX_SIGNATURE_HEIGHT = 200
 
 _ORIENTATION_TAG = 0x0112
 _ROTATED_ORIENTATIONS = {5, 6, 7, 8}
@@ -211,6 +217,60 @@ def _banner_layer(size, header_text, footer_text, header_h, footer_h):
 
 
 # --------------------------------------------------------------------------
+# Signature stamp
+# --------------------------------------------------------------------------
+
+def _remove_paper(rgb):
+    """Turn a photo/scan of a signature on paper into dark ink on pure white.
+
+    The paper brightness is estimated locally (so shadows and uneven light are
+    ignored); only pixels clearly darker than their surroundings are kept.
+    """
+    gray = rgb.convert("L")
+    small = gray.resize((max(1, gray.width // 8), max(1, gray.height // 8)), Image.Resampling.BILINEAR)
+    small = small.filter(ImageFilter.MaxFilter(7)).filter(ImageFilter.GaussianBlur(2))
+    paper = small.resize(gray.size, Image.Resampling.BILINEAR)
+    darker = ImageChops.subtract(paper, gray)
+    alpha = darker.point(lambda v: 0 if v < 18 else min(255, (v - 18) * 255 // 80))
+    return Image.composite(rgb, Image.new("RGB", rgb.size, "white"), alpha)
+
+
+def load_signature(fileobj, clean=True):
+    """Return the signature as an RGB image: just the ink on white, cropped to the ink.
+
+    Transparent PNGs (e.g. drawn in the browser) are flattened onto white. For
+    photos/scans, clean=True removes the paper background first.
+    """
+    fileobj.seek(0)
+    with Image.open(fileobj) as source:
+        source.draft("RGB", (2000, 2000))
+        im = ImageOps.exif_transpose(source)
+        im.thumbnail((2000, 2000))
+        has_alpha = im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info)
+        rgb = _to_rgb(im)
+    if clean and not has_alpha:
+        rgb = _remove_paper(rgb)
+
+    ink = ImageChops.difference(rgb, Image.new("RGB", rgb.size, "white")).convert("L")
+    box = ink.point(lambda v: 255 if v > 24 else 0).getbbox()
+    if not box:
+        raise ValueError("The signature image has no visible ink.")
+    pad = 4
+    box = (max(0, box[0] - pad), max(0, box[1] - pad), min(rgb.width, box[2] + pad), min(rgb.height, box[3] + pad))
+    return rgb.crop(box)
+
+
+def _fit_signature(signature, height, page_w):
+    """Scale to the requested height, but never wider than 45% of the page."""
+    width = max(1, round(signature.width * height / signature.height))
+    max_width = round(page_w * 0.45)
+    if width > max_width:
+        width = max_width
+        height = max(1, round(signature.height * width / signature.width))
+    return signature.resize((width, height), Image.Resampling.LANCZOS)
+
+
+# --------------------------------------------------------------------------
 # Layout (geometry only)
 # --------------------------------------------------------------------------
 
@@ -369,8 +429,14 @@ def _skip_reason(name, exc):
 
 
 def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
-                  header_text="", footer_text=""):
-    """sources: iterable of (name, seekable file object). Photo order is kept."""
+                  header_text="", footer_text="", signature=None, signature_position="right",
+                  signature_height=DEFAULT_SIGNATURE_HEIGHT, signature_pages="last",
+                  signature_clean=True):
+    """sources: iterable of (name, seekable file object). Photo order is kept.
+
+    signature: optional seekable image file. It is stamped in its own band above the
+    footer text, so it never covers a photo. Every page keeps the same margins.
+    """
     result = Collage()
     if page_size not in PAGE_SIZES:
         page_size = DEFAULT_PAGE_SIZE
@@ -389,11 +455,31 @@ def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
 
     scale = page_w / BASE_PAGE_WIDTH
     header_h = round(80 * scale) if header_text else 0
-    footer_h = round(70 * scale) if footer_text else 0
-    layer, result.warnings = _banner_layer((page_w, page_h), header_text, footer_text, header_h, footer_h)
+    footer_text_h = round(70 * scale) if footer_text else 0
+
+    stamp, stamp_band = None, 0
+    if signature is not None:
+        try:
+            height = max(MIN_SIGNATURE_HEIGHT, min(int(signature_height), MAX_SIGNATURE_HEIGHT))
+            stamp = _fit_signature(load_signature(signature, clean=signature_clean), round(height * scale), page_w)
+            stamp_band = stamp.height + 2 * round(10 * scale)
+        except Exception:
+            result.warnings.append("The signature image could not be read, so it was not added.")
+    if signature_position not in SIGNATURE_POSITIONS:
+        signature_position = "right"
+    footer_h = footer_text_h + stamp_band
+
+    layer, banner_warnings = _banner_layer((page_w, page_h), header_text, footer_text, header_h, footer_text_h)
+    result.warnings = banner_warnings + result.warnings
+
+    stamp_xy = None
+    if stamp:
+        side = max(margin, round(30 * scale))
+        x = {"left": side, "center": (page_w - stamp.width) // 2, "right": page_w - side - stamp.width}[signature_position]
+        stamp_xy = (x, page_h - footer_h + (stamp_band - stamp.height) // 2)
 
     layout = _layout([p.aspect for p in photos], page_w, page_h, margin, header_h, footer_h)
-    for placements in layout:
+    for index, placements in enumerate(layout):
         page = layer.copy()
         for p in placements:
             try:
@@ -403,6 +489,8 @@ def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
                 result.warnings.append(f"{photos[p.idx].name} could not be fully read.")
             page.paste(tile, (p.x, p.y))
             tile.close()
+        if stamp_xy and (signature_pages == "all" or index == len(layout) - 1):
+            page.paste(stamp, stamp_xy)
         result.pages.append(page)
     return result
 

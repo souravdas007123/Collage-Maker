@@ -66,6 +66,22 @@
         .btn-danger:hover { background: #fef2f2; }
         .btn:disabled { opacity: 0.7; cursor: not-allowed; }
 
+        [hidden] { display: none !important; }
+        .signature-box { text-align: left; border: 1px solid var(--border-color); border-radius: 12px; padding: 18px 20px; margin-bottom: 25px; background: #fafafa; }
+        .signature-box > label { display: block; font-size: 14px; font-weight: 500; margin-bottom: 12px; }
+        .signature-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+        .btn-outline { background: white; color: var(--primary); border: 1px solid #c7d2fe; padding: 10px 18px; font-size: 14px; }
+        .btn-outline:hover { background: #eef2ff; }
+        .btn-small { padding: 8px 16px; font-size: 14px; }
+        .sig-pad { margin-top: 14px; }
+        .sig-pad canvas { width: 100%; max-width: 700px; height: auto; background: white; border: 2px dashed #cbd5e1; border-radius: 10px; touch-action: none; cursor: crosshair; display: block; }
+        .sig-pad-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
+        .sig-pad-tools input[type="color"] { width: 38px; height: 34px; padding: 0; border: 1px solid var(--border-color); border-radius: 6px; background: white; cursor: pointer; }
+        .sig-preview { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+        .sig-preview img { max-height: 70px; max-width: 220px; background: white; border: 1px solid var(--border-color); border-radius: 8px; padding: 6px; }
+        .sig-options { margin-top: 14px; }
+        .sig-options .form-row { margin-bottom: 12px; }
+        .check-row { display: flex; align-items: center; gap: 8px; font-size: 14px; }
         .alerts:empty { display: none; }
         .alerts { margin-bottom: 20px; text-align: left; }
         .alert { border-radius: 8px; padding: 12px 16px; font-size: 14px; margin-bottom: 10px; border: 1px solid; }
@@ -139,6 +155,55 @@
                     <div class="form-group">
                         <label for="margin"><i class="fa-solid fa-arrows-left-right"></i> Spacing: <span class="range-value" id="margin-value">{{ default_margin }}</span> px</label>
                         <input type="range" id="margin" min="0" max="{{ max_margin }}" value="{{ default_margin }}">
+                    </div>
+                </div>
+
+                <div class="signature-box">
+                    <label><i class="fa-solid fa-signature"></i> Signature in footer (Optional)</label>
+                    <div class="signature-actions">
+                        <button type="button" class="btn btn-outline" id="sig-upload-btn"><i class="fa-solid fa-upload"></i> Upload image</button>
+                        <button type="button" class="btn btn-outline" id="sig-draw-btn"><i class="fa-solid fa-pen-nib"></i> Draw signature</button>
+                        <input type="file" id="sig-file-input" accept="image/*,.heic,.heif" hidden>
+                    </div>
+
+                    <div class="sig-pad" id="sig-pad" hidden>
+                        <canvas id="sig-canvas" width="700" height="220"></canvas>
+                        <div class="sig-pad-tools">
+                            <input type="color" id="sig-color" value="#111827" title="Pen colour" aria-label="Pen colour">
+                            <button type="button" class="btn btn-outline btn-small" id="sig-clear-btn">Clear</button>
+                            <button type="button" class="btn btn-primary btn-small" id="sig-use-btn"><i class="fa-solid fa-check"></i> Use this signature</button>
+                            <button type="button" class="link-btn" id="sig-cancel-btn" style="margin-top:0;">Cancel</button>
+                        </div>
+                    </div>
+
+                    <div class="sig-preview" id="sig-preview" hidden>
+                        <img id="sig-preview-img" alt="Signature preview">
+                        <button type="button" class="link-btn" id="sig-remove-btn" style="margin-top:0;">Remove signature</button>
+                    </div>
+
+                    <div class="sig-options" id="sig-options" hidden>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="sig-position">Position</label>
+                                <select class="form-control" id="sig-position">
+                                    <option value="right" selected>Right</option>
+                                    <option value="center">Center</option>
+                                    <option value="left">Left</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="sig-pages">Show on</label>
+                                <select class="form-control" id="sig-pages">
+                                    <option value="last" selected>Last page only</option>
+                                    <option value="all">Every page</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 12px;">
+                            <label for="sig-size">Size: <span class="range-value" id="sig-size-value">{{ sig_default }}</span></label>
+                            <input type="range" id="sig-size" min="{{ sig_min }}" max="{{ sig_max }}" value="{{ sig_default }}">
+                        </div>
+                        <label class="check-row"><input type="checkbox" id="sig-clean" checked> Remove paper background (for a photo or scan of a signature)</label>
                     </div>
                 </div>
 
@@ -447,6 +512,97 @@
             });
             marginInput.addEventListener("input", function () { $("margin-value").textContent = this.value; });
 
+            // ---------- signature ----------
+            let signatureFile = null;
+            let signatureUrl = null;
+
+            function setSignature(file) {
+                if (signatureUrl) URL.revokeObjectURL(signatureUrl);
+                signatureFile = file;
+                signatureUrl = file ? URL.createObjectURL(file) : null;
+                $("sig-preview").hidden = !file;
+                $("sig-options").hidden = !file;
+                if (file) $("sig-preview-img").src = signatureUrl;
+            }
+
+            $("sig-upload-btn").addEventListener("click", function () { $("sig-file-input").click(); });
+            $("sig-file-input").addEventListener("change", async function () {
+                const file = this.files[0];
+                this.value = "";
+                if (!file) return;
+                if (!isImage(file)) {
+                    showAlerts($("upload-alerts"), [{ kind: "error", text: "The signature must be an image file." }]);
+                    return;
+                }
+                showAlerts($("upload-alerts"), []);
+                try {
+                    setSignature(!serverHeic && isHeic(file) ? await convertHeic(file) : file);
+                    $("sig-pad").hidden = true;
+                } catch (err) {
+                    showAlerts($("upload-alerts"), [{ kind: "error", text: "Could not use this signature image. Please save it as a JPG or PNG and try again." }]);
+                }
+            });
+            $("sig-remove-btn").addEventListener("click", function () { setSignature(null); });
+            $("sig-size").addEventListener("input", function () { $("sig-size-value").textContent = this.value; });
+
+            // drawing pad (mouse, pen and touch)
+            const canvas = $("sig-canvas");
+            const pen = canvas.getContext("2d");
+            let drawing = false;
+            let hasInk = false;
+
+            function canvasPoint(e) {
+                const rect = canvas.getBoundingClientRect();
+                return {
+                    x: (e.clientX - rect.left) * canvas.width / rect.width,
+                    y: (e.clientY - rect.top) * canvas.height / rect.height
+                };
+            }
+            canvas.addEventListener("pointerdown", function (e) {
+                e.preventDefault();
+                drawing = true;
+                hasInk = true;
+                if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+                const p = canvasPoint(e);
+                pen.strokeStyle = $("sig-color").value;
+                pen.lineWidth = 4;
+                pen.lineCap = "round";
+                pen.lineJoin = "round";
+                pen.beginPath();
+                pen.moveTo(p.x, p.y);
+                pen.lineTo(p.x + 0.1, p.y);   // a single tap leaves a dot
+                pen.stroke();
+            });
+            canvas.addEventListener("pointermove", function (e) {
+                if (!drawing) return;
+                const p = canvasPoint(e);
+                pen.lineTo(p.x, p.y);
+                pen.stroke();
+                pen.beginPath();
+                pen.moveTo(p.x, p.y);
+            });
+            function stopDrawing() { drawing = false; }
+            canvas.addEventListener("pointerup", stopDrawing);
+            canvas.addEventListener("pointercancel", stopDrawing);
+
+            $("sig-draw-btn").addEventListener("click", function () { $("sig-pad").hidden = false; });
+            $("sig-cancel-btn").addEventListener("click", function () { $("sig-pad").hidden = true; });
+            $("sig-clear-btn").addEventListener("click", function () {
+                pen.clearRect(0, 0, canvas.width, canvas.height);
+                hasInk = false;
+            });
+            $("sig-use-btn").addEventListener("click", function () {
+                if (!hasInk) {
+                    showAlerts($("upload-alerts"), [{ kind: "error", text: "Please draw your signature first." }]);
+                    return;
+                }
+                showAlerts($("upload-alerts"), []);
+                canvas.toBlob(function (blob) {
+                    setSignature(new File([blob], "signature.png", { type: "image/png" }));
+                    $("sig-pad").hidden = true;
+                }, "image/png");
+            });
+
             // ---------- generate preview ----------
             uploadForm.addEventListener("submit", async function (e) {
                 e.preventDefault();
@@ -462,6 +618,13 @@
                 formData.append("footer_text", $("footer-text").value);
                 formData.append("page_size", $("page-size").value);
                 formData.append("margin", marginInput.value);
+                if (signatureFile) {
+                    formData.append("signature", signatureFile, signatureFile.name);
+                    formData.append("signature_position", $("sig-position").value);
+                    formData.append("signature_pages", $("sig-pages").value);
+                    formData.append("signature_size", $("sig-size").value);
+                    formData.append("signature_clean", $("sig-clean").checked ? "1" : "0");
+                }
 
                 setBusy(submitBtn, true, "Generating Preview...");
                 try {

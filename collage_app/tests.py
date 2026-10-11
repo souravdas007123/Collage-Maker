@@ -5,7 +5,7 @@ import re
 import sys
 import unittest
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageDraw
 
 from . import collage
 
@@ -25,6 +25,93 @@ def make_jpeg(width, height, orientation=None):
 
 def sources(count, width=1600, height=1200):
     return [(f"{i}.jpg", make_jpeg(width, height)) for i in range(count)]
+
+
+def make_signature(kind="paper"):
+    """A fake signature: blue scribble on grey paper (JPEG), or dark ink on transparent PNG."""
+    width, height = 700, 300
+    if kind == "png":
+        image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        ink = (17, 24, 39, 255)
+    elif kind == "blank":
+        image = Image.new("RGB", (width, height), (230, 230, 226))
+        ink = None
+    else:
+        image = Image.new("RGB", (width, height), (215, 215, 210))
+        ink = (20, 40, 150)
+    if ink:
+        draw = ImageDraw.Draw(image)
+        draw.line([(50 + i * 8, 150 + (40 if i % 2 else -40)) for i in range(76)], fill=ink, width=6)
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG" if kind == "png" else "JPEG")
+    buffer.seek(0)
+    return buffer
+
+
+def ink_box(image):
+    """Bounding box of everything that is not white."""
+    return ImageChops.difference(image.convert("RGB"), Image.new("RGB", image.size, "white")).getbbox()
+
+
+class SignatureTests(unittest.TestCase):
+    def test_paper_background_is_removed_and_cropped_to_ink(self):
+        sig = collage.load_signature(make_signature("paper"))
+        self.assertEqual(sig.getpixel((1, 1)), (255, 255, 255))
+        self.assertLess(sig.width, 700)  # cropped, not the whole paper
+
+    def test_transparent_png_is_flattened_onto_white(self):
+        sig = collage.load_signature(make_signature("png"))
+        self.assertEqual(sig.getpixel((1, 1)), (255, 255, 255))
+        self.assertTrue(any(sum(sig.getpixel((x, y))) < 150 for x in range(0, sig.width, 4) for y in range(0, sig.height, 4)))
+
+    def test_blank_signature_is_rejected(self):
+        with self.assertRaises(ValueError):
+            collage.load_signature(make_signature("blank"))
+
+    def test_signature_goes_on_last_page_only_by_default(self):
+        result = collage.build_collage(sources(40), signature=make_signature("png"))
+        self.assertGreaterEqual(len(result.pages), 2)
+        bottom = lambda page: page.crop((0, page.height - 100, page.width, page.height))
+        self.assertIsNone(ink_box(bottom(result.pages[0])))
+        self.assertIsNotNone(ink_box(bottom(result.pages[-1])))
+
+    def test_signature_on_every_page(self):
+        result = collage.build_collage(sources(40), signature=make_signature("png"), signature_pages="all")
+        for page in result.pages:
+            self.assertIsNotNone(ink_box(page.crop((0, page.height - 100, page.width, page.height))))
+
+    def test_signature_position(self):
+        centers = {}
+        for position in ("left", "center", "right"):
+            page = collage.build_collage(sources(2), signature=make_signature("png"), signature_position=position).pages[0]
+            box = ink_box(page.crop((0, page.height - 100, page.width, page.height)))
+            centers[position] = (box[0] + box[2]) / 2
+        self.assertLess(centers["left"], centers["center"])
+        self.assertLess(centers["center"], centers["right"])
+        self.assertAlmostEqual(centers["center"], 620, delta=15)
+
+    def test_signature_sits_above_footer_text_and_below_photos(self):
+        page = collage.build_collage(sources(2), footer_text="Footer", signature=make_signature("png"), signature_height=100).pages[0]
+        text_zone = page.crop((400, page.height - 70, 840, page.height))   # centred footer text
+        self.assertIsNotNone(ink_box(text_zone))
+        sig_zone = page.crop((900, page.height - 70 - 110, page.width, page.height - 70 - 10))
+        self.assertIsNotNone(ink_box(sig_zone))
+
+    def test_unreadable_signature_is_reported_and_collage_still_made(self):
+        without = collage.build_collage(sources(3))
+        result = collage.build_collage(sources(3), signature=make_signature("blank"))
+        self.assertEqual(len(result.pages), len(without.pages))
+        self.assertTrue(any("signature" in w.lower() for w in result.warnings))
+
+    def test_signature_size_is_capped_to_page_width(self):
+        wide = Image.new("RGB", (4000, 100), "white")
+        ImageDraw.Draw(wide).line([(0, 50), (3999, 50)], fill="black", width=8)
+        buffer = io.BytesIO()
+        wide.save(buffer, "PNG")
+        buffer.seek(0)
+        page = collage.build_collage(sources(1), signature=buffer, signature_height=200).pages[0]
+        box = ink_box(page.crop((0, page.height - 210, page.width, page.height)))
+        self.assertLessEqual(box[2] - box[0], round(page.width * 0.45) + 2)
 
 
 class PhotoTests(unittest.TestCase):
