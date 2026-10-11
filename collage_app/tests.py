@@ -2,6 +2,7 @@
 
 import io
 import re
+import sys
 import unittest
 
 from PIL import Image, ImageChops
@@ -42,13 +43,17 @@ class PhotoTests(unittest.TestCase):
         self.assertEqual(result.skipped_reasons[0], "not a readable image")
 
     def test_heic_without_support_says_how_to_fix_it(self):
-        original = collage.HEIF_SUPPORTED
-        collage.HEIF_SUPPORTED = False
+        original = (collage.HEIF_SUPPORTED, collage.HEIF_ERROR)
         try:
-            result = collage.build_collage([("IMG_1.HEIC", io.BytesIO(b"nope"))])
+            collage.HEIF_SUPPORTED, collage.HEIF_ERROR = False, "ModuleNotFoundError: No module named 'pillow_heif'"
+            missing = collage.build_collage([("IMG_1.HEIC", io.BytesIO(b"nope"))])
+            collage.HEIF_ERROR = "OSError: libheif not found"
+            broken = collage.build_collage([("IMG_1.HEIC", io.BytesIO(b"nope"))])
         finally:
-            collage.HEIF_SUPPORTED = original
-        self.assertIn("pip install pillow-heif", result.skipped_reasons[0])
+            collage.HEIF_SUPPORTED, collage.HEIF_ERROR = original
+        self.assertIn("pip install pillow-heif", missing.skipped_reasons[0])
+        self.assertIn("libheif not found", broken.skipped_reasons[0])
+        self.assertIn(sys.executable, broken.skipped_reasons[0])
 
     def test_only_unreadable_files_gives_no_pages(self):
         result = collage.build_collage([("bad.txt", io.BytesIO(b"nope"))])

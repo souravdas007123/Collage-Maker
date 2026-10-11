@@ -10,6 +10,7 @@ Pipeline
 """
 
 import os
+import sys
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
@@ -17,13 +18,14 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
 
 HEIF_SUPPORTED = False
+HEIF_ERROR = ""
 try:  # lets iPhone HEIC/HEIF photos open; the app still works without it
     import pillow_heif
 
     pillow_heif.register_heif_opener()
     HEIF_SUPPORTED = True
-except Exception:  # not installed, or its native library failed to load
-    pass
+except Exception as _exc:  # not installed, or its native library failed to load
+    HEIF_ERROR = f"{type(_exc).__name__}: {_exc}"[:200]
 
 DPI = 150
 BASE_PAGE_WIDTH = 1240  # A4 width in px at 150 DPI; sizes below are scaled from it
@@ -350,7 +352,12 @@ class Collage:
 
 def _skip_reason(name, exc):
     if name.lower().endswith((".heic", ".heif")) and not HEIF_SUPPORTED:
-        return "HEIC support is not installed on the server (run: pip install pillow-heif, then restart the server)"
+        if HEIF_ERROR.startswith("ModuleNotFoundError"):
+            return (
+                "pillow-heif is not installed for the Python this server runs on "
+                f"({sys.executable}). Run: pip install pillow-heif with that Python, then restart the server"
+            )
+        return f"HEIC support failed to load ({HEIF_ERROR}). Server Python: {sys.executable}"
     if isinstance(exc, UnidentifiedImageError):
         return "not a readable image"
     return f"could not be read as an image ({type(exc).__name__}: {str(exc).strip()[:100]})"
