@@ -7,6 +7,8 @@ A Django app that turns many photos into a tight, print-ready collage PDF (A4, A
 - Optional header and footer text (Hindi, Bangla and other scripts work if a matching font is installed)
 - Page size and spacing options
 - Phone photos are rotated correctly (EXIF), transparent PNGs get a white background
+- iPhone HEIC/HEIF photos work (installed via `pillow-heif` in requirements.txt). Chrome and Firefox cannot
+  preview HEIC, so those photos show a placeholder thumbnail, but they are still used in the collage
 - Live preview; the PDF contains exactly the preview images (no second JPEG compression)
 
 ## Run it

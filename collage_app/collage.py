@@ -16,11 +16,11 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-try:  # optional: lets iPhone HEIC photos open
+try:  # lets iPhone HEIC/HEIF photos open; the app still works without it
     import pillow_heif
 
     pillow_heif.register_heif_opener()
-except ImportError:
+except Exception:  # not installed, or its native library failed to load
     pass
 
 DPI = 150
