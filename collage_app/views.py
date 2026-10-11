@@ -33,6 +33,16 @@ def _int(value, default, low, high):
         return default
 
 
+def _notes(result):
+    if not result.rotated:
+        return []
+    count = result.rotated
+    return [
+        f"{count} photo{'s were' if count != 1 else ' was'} turned 90° clockwise so the page is used better. "
+        "Untick \"Turn photos to fill the page\" to keep every photo upright."
+    ]
+
+
 @require_GET
 def collage_page(request):
     return render(
@@ -92,6 +102,7 @@ def create_preview(request):
             ),
             signature_pages=signature_pages if signature_pages in collage.SIGNATURE_PAGES else "last",
             signature_clean=request.POST.get("signature_clean", "1") == "1",
+            auto_rotate=request.POST.get("auto_rotate", "1") == "1",
         )
     except Exception:
         logger.exception("Collage generation failed")
@@ -107,6 +118,7 @@ def create_preview(request):
             "pages_base64": [base64.b64encode(collage.jpeg_bytes(p)).decode("ascii") for p in result.pages],
             "skipped": skipped,
             "warnings": signature_note + result.warnings,
+            "notes": _notes(result),
         }
     )
 

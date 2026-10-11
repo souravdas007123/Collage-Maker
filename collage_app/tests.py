@@ -69,21 +69,21 @@ class SignatureTests(unittest.TestCase):
             collage.load_signature(make_signature("blank"))
 
     def test_signature_goes_on_last_page_only_by_default(self):
-        result = collage.build_collage(sources(40), signature=make_signature("png"))
+        result = collage.build_collage(sources(40), auto_rotate=False, signature=make_signature("png"))
         self.assertGreaterEqual(len(result.pages), 2)
         bottom = lambda page: page.crop((0, page.height - 100, page.width, page.height))
         self.assertIsNone(ink_box(bottom(result.pages[0])))
         self.assertIsNotNone(ink_box(bottom(result.pages[-1])))
 
     def test_signature_on_every_page(self):
-        result = collage.build_collage(sources(40), signature=make_signature("png"), signature_pages="all")
+        result = collage.build_collage(sources(40), auto_rotate=False, signature=make_signature("png"), signature_pages="all")
         for page in result.pages:
             self.assertIsNotNone(ink_box(page.crop((0, page.height - 100, page.width, page.height))))
 
     def test_signature_position(self):
         centers = {}
         for position in ("left", "center", "right"):
-            page = collage.build_collage(sources(2), signature=make_signature("png"), signature_position=position).pages[0]
+            page = collage.build_collage(sources(2), auto_rotate=False, signature=make_signature("png"), signature_position=position).pages[0]
             box = ink_box(page.crop((0, page.height - 100, page.width, page.height)))
             centers[position] = (box[0] + box[2]) / 2
         self.assertLess(centers["left"], centers["center"])
@@ -91,15 +91,15 @@ class SignatureTests(unittest.TestCase):
         self.assertAlmostEqual(centers["center"], 620, delta=15)
 
     def test_signature_sits_above_footer_text_and_below_photos(self):
-        page = collage.build_collage(sources(2), footer_text="Footer", signature=make_signature("png"), signature_height=100).pages[0]
+        page = collage.build_collage(sources(2), auto_rotate=False, footer_text="Footer", signature=make_signature("png"), signature_height=100).pages[0]
         text_zone = page.crop((400, page.height - 70, 840, page.height))   # centred footer text
         self.assertIsNotNone(ink_box(text_zone))
         sig_zone = page.crop((900, page.height - 70 - 110, page.width, page.height - 70 - 10))
         self.assertIsNotNone(ink_box(sig_zone))
 
     def test_unreadable_signature_is_reported_and_collage_still_made(self):
-        without = collage.build_collage(sources(3))
-        result = collage.build_collage(sources(3), signature=make_signature("blank"))
+        without = collage.build_collage(sources(3), auto_rotate=False)
+        result = collage.build_collage(sources(3), auto_rotate=False, signature=make_signature("blank"))
         self.assertEqual(len(result.pages), len(without.pages))
         self.assertTrue(any("signature" in w.lower() for w in result.warnings))
 
@@ -109,9 +109,80 @@ class SignatureTests(unittest.TestCase):
         buffer = io.BytesIO()
         wide.save(buffer, "PNG")
         buffer.seek(0)
-        page = collage.build_collage(sources(1), signature=buffer, signature_height=200).pages[0]
+        page = collage.build_collage(sources(1), auto_rotate=False, signature=buffer, signature_height=200).pages[0]
         box = ink_box(page.crop((0, page.height - 210, page.width, page.height)))
         self.assertLessEqual(box[2] - box[0], round(page.width * 0.45) + 2)
+
+
+def photo_with_red_corner(width, height):
+    """A photo whose top-left corner is red, so rotation direction can be checked."""
+    image = Image.new("RGB", (width, height), (40, 90, 160))
+    ImageDraw.Draw(image).rectangle((0, 0, width // 5, height // 5), fill=(255, 0, 0))
+    buffer = io.BytesIO()
+    image.save(buffer, "JPEG", quality=95)
+    buffer.seek(0)
+    return buffer
+
+
+def used_height_fraction(page, margin=15):
+    box = ink_box(page)
+    return (box[3] - box[1]) / (page.height - 2 * margin)
+
+
+class PageFillTests(unittest.TestCase):
+    def test_no_header_or_footer_means_no_reserved_space(self):
+        # 4 portrait photos: rows of two fill the page from top margin to bottom margin
+        result = collage.build_collage([(f"{i}.jpg", make_jpeg(1200, 1600)) for i in range(4)])
+        box = ink_box(result.pages[0])
+        self.assertLessEqual(box[1], 15 + 70)                  # starts right at the top
+        self.assertGreaterEqual(box[3], result.pages[0].height - 15 - 70)  # reaches the bottom
+
+    def test_header_space_only_when_header_text_exists(self):
+        without = collage.build_collage(sources(6))
+        with_header = collage.build_collage(sources(6), header_text="Title")
+        # the banner is drawn in the top 80 px only when there is header text
+        self.assertIsNone(ink_box(without.pages[0].crop((0, 0, 1240, 10))))
+        self.assertIsNotNone(ink_box(with_header.pages[0].crop((0, 0, 1240, 80))))
+
+    def test_landscape_photos_are_turned_to_fill_a_portrait_page(self):
+        upright = collage.build_collage(sources(4), auto_rotate=False)
+        turned = collage.build_collage(sources(4))
+        self.assertEqual(upright.rotated, 0)
+        self.assertEqual(turned.rotated, 4)
+        self.assertLess(used_height_fraction(upright.pages[0]), 0.7)
+        self.assertGreater(used_height_fraction(turned.pages[0]), 0.95)
+
+    def test_single_landscape_photo_fills_the_page(self):
+        turned = collage.build_collage(sources(1))
+        self.assertEqual(turned.rotated, 1)
+        self.assertGreater(used_height_fraction(turned.pages[0]), 0.9)
+
+    def test_rotation_is_clockwise(self):
+        result = collage.build_collage([("a.jpg", photo_with_red_corner(1600, 1200))])
+        page = result.pages[0]
+        box = ink_box(page)
+        red_top_right = page.getpixel((box[2] - 8, box[1] + 8))
+        red_top_left = page.getpixel((box[0] + 8, box[1] + 8))
+        self.assertGreater(red_top_right[0], 200)   # red corner moved to the top-right
+        self.assertLess(red_top_left[0], 100)
+
+    def test_photos_that_already_fit_are_not_turned(self):
+        result = collage.build_collage([(f"{i}.jpg", make_jpeg(1200, 1600)) for i in range(4)])
+        self.assertEqual(result.rotated, 0)
+
+    def test_auto_rotate_never_needs_more_pages(self):
+        for count in (1, 3, 7, 12, 25):
+            for size in ((1600, 1200), (1200, 1600), (1500, 1500)):
+                upright = collage.build_collage(sources(count, *size), auto_rotate=False)
+                turned = collage.build_collage(sources(count, *size))
+                self.assertLessEqual(len(turned.pages), len(upright.pages), (count, size))
+
+    def test_leftover_height_is_spread_not_left_as_blank_bands(self):
+        result = collage.build_collage(sources(6, 1600, 1200), auto_rotate=False)
+        page = result.pages[0]
+        box = ink_box(page)
+        self.assertLess(box[1], 190)                 # photos start near the top ...
+        self.assertGreater(page.height - box[3], 0)  # ... and the block is still inside the margins
 
 
 class PhotoTests(unittest.TestCase):

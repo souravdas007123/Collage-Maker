@@ -87,15 +87,22 @@ class Photo:
         self.size = (width, height)
         self.aspect = width / height
 
-    def render(self, width, height):
-        """Return the photo as an RGB image of exactly width x height, upright."""
+    def render(self, width, height, rotate=False):
+        """Return the photo as an RGB image of exactly width x height.
+
+        rotate=True turns it 90 degrees clockwise; width x height is then the size
+        AFTER turning (so the photo is first drawn upright at height x width).
+        """
+        if rotate:
+            width, height = height, width
         self._file.seek(0)
         with Image.open(self._file) as im:
             side = max(width, height)
             im.draft("RGB", (side, side))  # JPEG: decode at reduced size (much faster)
             im = ImageOps.exif_transpose(im)
             im = _to_rgb(im)
-            return im.resize((width, height), Image.Resampling.LANCZOS, reducing_gap=3.0)
+            im = im.resize((width, height), Image.Resampling.LANCZOS, reducing_gap=3.0)
+        return im.transpose(Image.Transpose.ROTATE_270) if rotate else im
 
 
 # --------------------------------------------------------------------------
@@ -377,8 +384,8 @@ def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
         total = sum(h for _, h, _ in rows) + gap * (len(rows) - 1)
         slack = max(0.0, usable_h - total)
         extra = 0.0
-        if k < last and len(rows) > 1:
-            extra = min(slack / (len(rows) - 1), gap * 2)
+        if (k < last or last == 0) and len(rows) > 1:
+            extra = min(slack / (len(rows) - 1), gap * 3)
         total += extra * (len(rows) - 1)
         slack = max(0.0, usable_h - total)
         y = top + (slack / 2 if (k < last or last == 0) else 0.0)
@@ -398,6 +405,41 @@ def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
     return result
 
 
+def _coverage(layout, usable_w, usable_h):
+    """Share of the printable area (all pages) that is covered by photos."""
+    covered = sum(p.w * p.h for page in layout for p in page)
+    return covered / (len(layout) * usable_w * usable_h)
+
+
+def _best_layout(aspects, page_w, page_h, margin, header_h, footer_h, auto_rotate):
+    """Return (layout, rotated_flags). Tries turning photos 90 degrees if that fills the page better."""
+    usable_w = page_w - 2 * margin
+    usable_h = page_h - 2 * margin - header_h - footer_h
+
+    def run(flags):
+        turned = [1 / a if flag else a for a, flag in zip(aspects, flags)]
+        return _layout(turned, page_w, page_h, margin, header_h, footer_h)
+
+    upright = [False] * len(aspects)
+    best_layout = run(upright)
+    best_flags = upright
+    if not auto_rotate:
+        return best_layout, best_flags
+
+    base_pages = len(best_layout)
+    base_cover = _coverage(best_layout, usable_w, usable_h)
+    best_key = (base_pages, -base_cover)
+    for flags in ([a > 1.05 for a in aspects], [a < 0.95 for a in aspects]):  # all -> portrait, all -> landscape
+        if not any(flags):
+            continue
+        layout = run(flags)
+        cover = _coverage(layout, usable_w, usable_h)
+        better = len(layout) < base_pages or (len(layout) == base_pages and cover >= base_cover + 0.05)
+        if better and (len(layout), -cover) < best_key:
+            best_layout, best_flags, best_key = layout, flags, (len(layout), -cover)
+    return best_layout, best_flags
+
+
 # --------------------------------------------------------------------------
 # Public API
 # --------------------------------------------------------------------------
@@ -408,6 +450,7 @@ class Collage:
     skipped: list = field(default_factory=list)  # names of unreadable files
     skipped_reasons: list = field(default_factory=list)  # why, same order as skipped
     warnings: list = field(default_factory=list)
+    rotated: int = 0  # photos turned 90 degrees to fill the page better
 
 
 def _skip_reason(name, exc):
@@ -431,7 +474,7 @@ def _skip_reason(name, exc):
 def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
                   header_text="", footer_text="", signature=None, signature_position="right",
                   signature_height=DEFAULT_SIGNATURE_HEIGHT, signature_pages="last",
-                  signature_clean=True):
+                  signature_clean=True, auto_rotate=True):
     """sources: iterable of (name, seekable file object). Photo order is kept.
 
     signature: optional seekable image file. It is stamped in its own band above the
@@ -478,12 +521,13 @@ def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
         x = {"left": side, "center": (page_w - stamp.width) // 2, "right": page_w - side - stamp.width}[signature_position]
         stamp_xy = (x, page_h - footer_h + (stamp_band - stamp.height) // 2)
 
-    layout = _layout([p.aspect for p in photos], page_w, page_h, margin, header_h, footer_h)
+    layout, rotated = _best_layout([p.aspect for p in photos], page_w, page_h, margin, header_h, footer_h, auto_rotate)
+    result.rotated = sum(rotated)
     for index, placements in enumerate(layout):
         page = layer.copy()
         for p in placements:
             try:
-                tile = photos[p.idx].render(p.w, p.h)
+                tile = photos[p.idx].render(p.w, p.h, rotate=rotated[p.idx])
             except Exception:
                 tile = Image.new("RGB", (p.w, p.h), "#e5e7eb")
                 result.warnings.append(f"{photos[p.idx].name} could not be fully read.")

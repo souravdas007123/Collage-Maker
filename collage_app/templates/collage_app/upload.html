@@ -86,6 +86,7 @@
         .alerts { margin-bottom: 20px; text-align: left; }
         .alert { border-radius: 8px; padding: 12px 16px; font-size: 14px; margin-bottom: 10px; border: 1px solid; }
         .alert-error { background: var(--error-bg); border-color: var(--error-border); color: var(--error-text); }
+        .alert-info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
         .alert-warning { background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-text); }
 
         .preview-header { display: flex; align-items: center; justify-content: space-between; background: white; padding: 20px 30px; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); text-align: left; }
@@ -157,6 +158,11 @@
                         <input type="range" id="margin" min="0" max="{{ max_margin }}" value="{{ default_margin }}">
                     </div>
                 </div>
+
+                <label class="check-row" style="margin-bottom: 25px; text-align: left;">
+                    <input type="checkbox" id="auto-rotate" checked>
+                    <span>Turn photos 90&deg; to fill the page (only when it leaves less empty space)</span>
+                </label>
 
                 <div class="signature-box">
                     <label><i class="fa-solid fa-signature"></i> Signature in footer (Optional)</label>
@@ -618,6 +624,7 @@
                 formData.append("footer_text", $("footer-text").value);
                 formData.append("page_size", $("page-size").value);
                 formData.append("margin", marginInput.value);
+                formData.append("auto_rotate", $("auto-rotate").checked ? "1" : "0");
                 if (signatureFile) {
                     formData.append("signature", signatureFile, signatureFile.name);
                     formData.append("signature_position", $("sig-position").value);
@@ -660,6 +667,7 @@
                 });
 
                 const notes = [];
+                (data.notes || []).forEach(function (text) { notes.push({ kind: "info", text: text }); });
                 (data.skipped || []).forEach(function (name) { notes.push({ kind: "warning", text: "Skipped: " + name }); });
                 (data.warnings || []).forEach(function (text) { notes.push({ kind: "warning", text: text }); });
                 showAlerts($("preview-alerts"), notes);
