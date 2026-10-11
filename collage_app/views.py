@@ -43,6 +43,7 @@ def collage_page(request):
             "max_margin": collage.MAX_MARGIN,
             "max_photos": MAX_PHOTOS,
             "max_text": MAX_TEXT_LENGTH,
+            "server_heic": collage.HEIF_SUPPORTED,
         },
     )
 

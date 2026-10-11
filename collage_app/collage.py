@@ -357,6 +357,11 @@ def _skip_reason(name, exc):
                 "pillow-heif is not installed for the Python this server runs on "
                 f"({sys.executable}). Run: pip install pillow-heif with that Python, then restart the server"
             )
+        if "DLL load failed" in HEIF_ERROR or "Application Control" in HEIF_ERROR:
+            return (
+                "Windows blocked the HEIC library on this computer. The browser normally converts HEIC "
+                "photos itself; if that failed, save the photo as JPG and add it again"
+            )
         return f"HEIC support failed to load ({HEIF_ERROR}). Server Python: {sys.executable}"
     if isinstance(exc, UnidentifiedImageError):
         return "not a readable image"
