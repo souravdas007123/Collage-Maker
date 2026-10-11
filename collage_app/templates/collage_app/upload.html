@@ -47,6 +47,7 @@
         .thumbnail-gallery { display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; margin-top: 20px; }
         .thumb-wrapper { position: relative; display: inline-block; cursor: grab; }
         .thumb-wrapper img { width: 70px; height: 70px; object-fit: cover; border-radius: 8px; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: block; }
+        .add-tile { width: 70px; height: 70px; box-sizing: content-box; border-radius: 8px; border: 2px dashed var(--success); color: var(--success); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 700; cursor: pointer; background: white; }
         .thumb-placeholder { width: 70px; height: 70px; box-sizing: content-box; border-radius: 8px; border: 2px solid white; background: #e2e8f0; color: var(--text-muted); box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
         .thumb-placeholder i { font-size: 20px; }
         .thumb-wrapper.dragging { opacity: 0.35; }
@@ -483,6 +484,13 @@
                     wrapper.appendChild(deleteBtn);
                     gallery.appendChild(wrapper);
                 });
+
+                // Always-visible way to add more photos, even when thumbnails cover the whole box.
+                const addTile = document.createElement("div");
+                addTile.className = "add-tile";
+                addTile.title = "Add more photos";
+                addTile.innerHTML = '<i class="fa-solid fa-plus"></i><span>Add more</span>';
+                gallery.appendChild(addTile);
             }
 
             // ---------- picking files ----------
