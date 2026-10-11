@@ -69,14 +69,14 @@ class SignatureTests(unittest.TestCase):
             collage.load_signature(make_signature("blank"))
 
     def test_signature_goes_on_last_page_only_by_default(self):
-        result = collage.build_collage(sources(40), auto_rotate=False, signature=make_signature("png"))
+        result = collage.build_collage(sources(120), auto_rotate=False, signature=make_signature("png"))
         self.assertGreaterEqual(len(result.pages), 2)
         bottom = lambda page: page.crop((0, page.height - 100, page.width, page.height))
         self.assertIsNone(ink_box(bottom(result.pages[0])))
         self.assertIsNotNone(ink_box(bottom(result.pages[-1])))
 
     def test_signature_on_every_page(self):
-        result = collage.build_collage(sources(40), auto_rotate=False, signature=make_signature("png"), signature_pages="all")
+        result = collage.build_collage(sources(120), auto_rotate=False, signature=make_signature("png"), signature_pages="all")
         for page in result.pages:
             self.assertIsNotNone(ink_box(page.crop((0, page.height - 100, page.width, page.height))))
 
@@ -135,7 +135,8 @@ class PageFillTests(unittest.TestCase):
         result = collage.build_collage([(f"{i}.jpg", make_jpeg(1200, 1600)) for i in range(4)])
         box = ink_box(result.pages[0])
         self.assertLessEqual(box[1], 15 + 70)                  # starts right at the top
-        self.assertGreaterEqual(box[3], result.pages[0].height - 15 - 70)  # reaches the bottom
+        # two 3:4 photos side by side are 797 px tall each, so ratio alone leaves ~130 px; nothing more is possible
+        self.assertGreaterEqual(box[3], result.pages[0].height - 15 - 140)
 
     def test_header_space_only_when_header_text_exists(self):
         without = collage.build_collage(sources(6))
@@ -149,8 +150,8 @@ class PageFillTests(unittest.TestCase):
         turned = collage.build_collage(sources(4))
         self.assertEqual(upright.rotated, 0)
         self.assertEqual(turned.rotated, 4)
-        self.assertLess(used_height_fraction(upright.pages[0]), 0.7)
-        self.assertGreater(used_height_fraction(turned.pages[0]), 0.95)
+        self.assertGreater(used_height_fraction(turned.pages[0]), 0.9)
+        self.assertLess(used_height_fraction(upright.pages[0]), used_height_fraction(turned.pages[0]) - 0.15)
 
     def test_single_landscape_photo_fills_the_page(self):
         turned = collage.build_collage(sources(1))
@@ -177,12 +178,37 @@ class PageFillTests(unittest.TestCase):
                 turned = collage.build_collage(sources(count, *size))
                 self.assertLessEqual(len(turned.pages), len(upright.pages), (count, size))
 
-    def test_leftover_height_is_spread_not_left_as_blank_bands(self):
-        result = collage.build_collage(sources(6, 1600, 1200), auto_rotate=False)
-        page = result.pages[0]
-        box = ink_box(page)
-        self.assertLess(box[1], 190)                 # photos start near the top ...
-        self.assertGreater(page.height - box[3], 0)  # ... and the block is still inside the margins
+    def test_photos_start_at_the_very_top_never_centred(self):
+        for count, size in ((1, (1600, 1200)), (4, (1600, 1200)), (7, (1600, 1200)), (10, (1200, 1600)), (10, (1600, 1200))):
+            for rotate in (True, False):
+                page = collage.build_collage(sources(count, *size), auto_rotate=rotate).pages[0]
+                self.assertLessEqual(ink_box(page)[1], 16, (count, size, rotate))   # margin only (15 px)
+
+    def test_ten_photos_fit_one_page_and_fill_it(self):
+        for size in ((1600, 1200), (1200, 1600), (1500, 1500)):
+            result = collage.build_collage(sources(10, *size))
+            self.assertEqual(len(result.pages), 1, size)
+            box = ink_box(result.pages[0])
+            self.assertGreater((box[3] - box[1]) / result.pages[0].height, 0.8, size)
+
+    def test_header_gets_padding_and_photos_start_below_it(self):
+        page = collage.build_collage(sources(10), header_text="My Title").pages[0]
+        header = ink_box(page.crop((0, 0, 1240, 80)))
+        self.assertGreater(header[1], 10)                 # padding above the text
+        self.assertLess(header[3], 70)                    # and below it
+        below = ink_box(page.crop((0, 80, 1240, 200)))
+        self.assertLessEqual(below[1], 16)                # photos start right after the header band (80 + 15)
+
+    def test_random_batches_use_the_page_well(self):
+        import random
+        rng = random.Random(5)
+        for _ in range(12):
+            count = rng.randint(4, 16)
+            aspects = [rng.choice([4 / 3, 3 / 4, 3 / 2, 2 / 3, 1.0, 16 / 9]) for _ in range(count)]
+            layout, _ = collage._best_layout(aspects, 1240, 1754, 15, 0, 0, True)
+            coverage = collage._coverage(layout, 1210, 1724)
+            self.assertEqual(len(layout), 1)
+            self.assertGreater(coverage, 0.6, aspects)
 
 
 class PhotoTests(unittest.TestCase):
@@ -233,6 +259,7 @@ class LayoutTests(unittest.TestCase):
         for placements in pages:
             for p in placements:
                 seen.append(p.idx)
+                self.assertLessEqual(abs(p.w - p.h * aspects[p.idx]), 1.1 + aspects[p.idx], "aspect ratio must be kept (pixel rounding only)")
                 self.assertGreaterEqual(p.x, margin)
                 self.assertLessEqual(p.x + p.w, page_w - margin + 1)
                 self.assertGreaterEqual(p.y, margin + header_h)
@@ -259,14 +286,29 @@ class LayoutTests(unittest.TestCase):
 
     def test_more_photos_never_means_fewer_pages_by_much(self):
         # Regression: the old formula gave 15 photos -> 3 pages but 20 photos -> 2 pages.
-        counts = [len(collage._layout([1.33] * n, 1240, 1754, 15, 0, 0)) for n in (10, 15, 20, 30, 40)]
+        counts = [len(collage._layout([1.33] * n, 1240, 1754, 15, 0, 0)) for n in (10, 15, 20, 40, 80, 120, 160)]
         self.assertEqual(counts, sorted(counts))
 
     def test_pages_are_well_filled(self):
-        result = collage.build_collage(sources(30))
+        result = collage.build_collage(sources(150))
+        self.assertGreaterEqual(len(result.pages), 2)
         for page in result.pages[:-1]:
             bbox = ImageChops.difference(page, Image.new("RGB", page.size, "white")).getbbox()
             self.assertGreater(bbox[3] / page.height, 0.85)
+
+    def test_dp_rows_is_exact_ordered_and_within_limits(self):
+        aspects = [1.5, 0.67, 1.0, 1.78, 0.75, 1.33, 0.56, 1.0, 1.5, 0.67]
+        rows, total = collage._dp_rows(list(range(10)), aspects, 1210, 15, 1624, 150, 900)
+        self.assertEqual([i for ids, _, _ in rows for i in ids], list(range(10)))   # order kept, none lost
+        self.assertTrue(all(150 <= h <= 900 for _, h, _ in rows))
+        real_total = sum(h for _, h, _ in rows) + 15 * (len(rows) - 1)
+        self.assertLessEqual(real_total, 1624)
+        self.assertLessEqual(real_total, total)
+        for ids, h, _ in rows:                                               # every row spans the full width
+            self.assertAlmostEqual(sum(aspects[i] * h for i in ids) + 15 * (len(ids) - 1), 1210, delta=0.01)
+
+    def test_dp_rows_returns_none_when_nothing_fits(self):
+        self.assertIsNone(collage._dp_rows(list(range(30)), [1.33] * 30, 1210, 15, 300, 150, 900))
 
 
 class OutputTests(unittest.TestCase):

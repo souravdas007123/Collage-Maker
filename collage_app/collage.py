@@ -9,6 +9,7 @@ Pipeline
     4. images_to_pdf()  -> wrap the page JPEGs in a PDF without re-encoding them
 """
 
+import math
 import os
 import sys
 from dataclasses import dataclass, field
@@ -338,8 +339,88 @@ def _paginate(rows, usable_h, gap):
     return pages
 
 
+def _dp_rows(ids, aspects, width, gap, limit, band_lo, band_hi, max_per_row=10):
+    """Exact row packing for ONE page.
+
+    Splits the photos (order kept) into full-width rows, each between band_lo and
+    band_hi tall, so that the total height is as large as possible without going
+    over `limit`. Photos keep their aspect ratio; nothing is cropped.
+    Returns (rows, total_height) or None when no split fits.
+    """
+    count = len(ids)
+    limit = int(limit)
+    mask = (1 << (limit + 1)) - 1
+    prefix = [0.0]
+    for i in ids:
+        prefix.append(prefix[-1] + aspects[i])
+
+    def row_height(j, i):
+        return (width - gap * (i - j - 1)) / (prefix[i] - prefix[j])
+
+    # reach[i] is a bit set: bit t is on when the first i photos can be laid out in exactly t px
+    reach = [0] * (count + 1)
+    reach[0] = 1
+    for i in range(1, count + 1):
+        bits = 0
+        for j in range(max(0, i - max_per_row), i):
+            if not reach[j]:
+                continue
+            h = row_height(j, i)
+            if h < band_lo or h > band_hi:
+                continue
+            bits |= (reach[j] << (math.ceil(h) + (gap if j else 0))) & mask
+        reach[i] = bits
+    if not reach[count]:
+        return None
+
+    total = reach[count].bit_length() - 1
+    rows, i, t = [], count, total
+    middle = (band_lo + band_hi) / 2
+    while i > 0:
+        best = None
+        for j in range(max(0, i - max_per_row), i):
+            h = row_height(j, i)
+            if h < band_lo or h > band_hi:
+                continue
+            step = math.ceil(h) + (gap if j else 0)
+            if t - step >= 0 and (reach[j] >> (t - step)) & 1:
+                if best is None or abs(h - middle) < abs(best[1] - middle):
+                    best = (j, h, step)
+        j, h, step = best
+        rows.append((ids[j:i], h, False))
+        i, t = j, t - step
+    rows.reverse()
+    return rows, total
+
+
+def _dp_best(ids, aspects, width, gap, limit, ref_hi, ref_lo, step, floor):
+    """Pick the exact packing that uses the page best.
+
+    First tries rows of similar height (neat). Only if that leaves the page less than
+    ~93% used does it allow bigger differences between rows (e.g. one large photo
+    plus smaller ones), and only when that clearly fills more of the page.
+    """
+
+    def scan(low_factor, high_factor):
+        best, ref = None, ref_hi
+        while ref >= ref_lo:
+            found = _dp_rows(ids, aspects, width, gap, limit, max(floor, ref * low_factor), min(limit, ref * high_factor))
+            if found and (best is None or found[1] > best[1]):
+                best = found
+            ref -= step
+        return best
+
+    best = scan(0.72, 1.28)
+    if best is None or best[1] < 0.93 * limit:
+        for low_factor, high_factor in ((0.55, 1.7), (0.3, 3.0)):
+            wider = scan(low_factor, high_factor)
+            if wider and (best is None or wider[1] > best[1] + 0.04 * limit):
+                best = wider
+    return best
+
+
 def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
-    """Return pages -> list[Placement]."""
+    """Return pages -> list[Placement]. Everything is packed from the top of the page down."""
     count = len(aspects)
     usable_w = page_w - 2 * margin
     usable_h = page_h - 2 * margin - header_h - footer_h
@@ -347,10 +428,11 @@ def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
     gap = margin
     scale = page_w / BASE_PAGE_WIDTH
 
-    h_lo = max(40, round(220 * scale))
+    h_lo = max(40, round(180 * scale))
     h_hi = usable_h if count == 1 else min(usable_h, round(800 * scale))
     h_hi = max(h_hi, h_lo)
     ids = list(range(count))
+    step = max(4, round(12 * scale))
 
     def paged(sub_ids, target_h):
         rows = _plan_rows(sub_ids, aspects, target_h, usable_w, gap, usable_h)
@@ -366,30 +448,28 @@ def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
             chosen_h, pages = target_h, candidate
             break
 
-    # Pages before the last: enlarge photos a little so the page is filled better.
+    def used(rows):
+        return sum(h for _, h, _ in rows) + gap * (len(rows) - 1)
+
+    # Everything on ONE page whenever an exact packing exists, and use the page as fully as possible.
+    single = _dp_best(ids, aspects, usable_w, gap, usable_h, h_hi, h_lo, step, h_lo)
+    if single and (len(pages) > 1 or single[1] > used(pages[0])):
+        pages = [single[0]]
+
+    # Pages before the last: repack exactly so the page is filled as far down as possible.
     refined = []
     for k, page_rows in enumerate(pages):
         if k < len(pages) - 1:
             page_ids = [i for row_ids, _, _ in page_rows for i in row_ids]
-            for target_h in range(min(int(h_hi), int(chosen_h * 1.2)), int(chosen_h), -2):
-                candidate = paged(page_ids, target_h)
-                if len(candidate) == 1 and not candidate[0][-1][2]:
-                    page_rows = candidate[0]
-                    break
+            better = _dp_best(page_ids, aspects, usable_w, gap, usable_h,
+                              min(h_hi, chosen_h * 1.3), chosen_h * 0.85, max(2, step // 2), h_lo)
+            if better and better[1] > used(page_rows):
+                page_rows = better[0]
         refined.append(page_rows)
 
     result = []
-    last = len(refined) - 1
-    for k, rows in enumerate(refined):
-        total = sum(h for _, h, _ in rows) + gap * (len(rows) - 1)
-        slack = max(0.0, usable_h - total)
-        extra = 0.0
-        if (k < last or last == 0) and len(rows) > 1:
-            extra = min(slack / (len(rows) - 1), gap * 3)
-        total += extra * (len(rows) - 1)
-        slack = max(0.0, usable_h - total)
-        y = top + (slack / 2 if (k < last or last == 0) else 0.0)
-
+    for rows in refined:
+        y = float(top)
         placements = []
         for row_ids, h, _ in rows:
             row_w = sum(aspects[i] * h for i in row_ids) + gap * (len(row_ids) - 1)
@@ -400,7 +480,7 @@ def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
                 x0, x1 = round(x), round(x + w)
                 placements.append(Placement(i, x0, y0, max(1, x1 - x0), max(1, y1 - y0)))
                 x += w + gap
-            y += h + gap + extra
+            y += h + gap
         result.append(placements)
     return result
 

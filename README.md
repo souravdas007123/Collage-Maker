@@ -6,10 +6,12 @@ A Django app that turns many photos into a tight, print-ready collage PDF (A4, A
 - Upload by clicking or drag-and-drop; drag thumbnails to change the order
 - Optional header and footer text (Hindi, Bangla and other scripts work if a matching font is installed)
 - Page size and spacing options
-- No reserved space: header/footer/signature areas exist only when you use them, so photos can use the whole
-  page. "Turn photos 90 degrees to fill the page" (on by default) rotates photos clockwise only when that
-  leaves clearly less empty space and never needs more pages; untick it to keep every photo upright
-- Phone photos are rotated correctly (EXIF), transparent PNGs get a white background
+- Uses the page fully: photos start at the very top and are packed down the page with an exact search, keeping
+  every photo's aspect ratio (nothing is cropped or stretched). It tries to put everything on ONE page and only
+  adds pages when the photos cannot fit. Space for header, footer and signature exists only when you use them
+  (header text gets padding above and below it, then the photos start)
+- "Turn photos 90 degrees to fill the page" (on by default) rotates photos clockwise only when that leaves
+  clearly less empty space and never needs more pages; untick it to keep every photo upright
 - iPhone HEIC/HEIF photos work. If the server can open them (via `pillow-heif`) they are used directly;
   otherwise (for example when Windows Application Control blocks the native library) the browser converts
   them to JPEG before upload. That needs internet access once, to load the converter from a CDN
