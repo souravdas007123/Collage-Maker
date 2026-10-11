@@ -39,7 +39,7 @@ class PhotoTests(unittest.TestCase):
     def test_skip_reason_is_reported(self):
         result = collage.build_collage([("bad.txt", io.BytesIO(b"nope"))])
         self.assertEqual(len(result.skipped_reasons), 1)
-        self.assertIn("could not be read as an image", result.skipped_reasons[0])
+        self.assertEqual(result.skipped_reasons[0], "not a readable image")
 
     def test_heic_without_support_says_how_to_fix_it(self):
         original = collage.HEIF_SUPPORTED

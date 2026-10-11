@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
 
 HEIF_SUPPORTED = False
 try:  # lets iPhone HEIC/HEIF photos open; the app still works without it
@@ -351,8 +351,9 @@ class Collage:
 def _skip_reason(name, exc):
     if name.lower().endswith((".heic", ".heif")) and not HEIF_SUPPORTED:
         return "HEIC support is not installed on the server (run: pip install pillow-heif, then restart the server)"
-    detail = str(exc).strip()[:100]
-    return f"could not be read as an image ({type(exc).__name__}{': ' + detail if detail else ''})"
+    if isinstance(exc, UnidentifiedImageError):
+        return "not a readable image"
+    return f"could not be read as an image ({type(exc).__name__}: {str(exc).strip()[:100]})"
 
 
 def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
