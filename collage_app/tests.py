@@ -36,6 +36,20 @@ class PhotoTests(unittest.TestCase):
         self.assertEqual(result.skipped, ["bad.txt"])
         self.assertEqual(len(result.pages), 1)
 
+    def test_skip_reason_is_reported(self):
+        result = collage.build_collage([("bad.txt", io.BytesIO(b"nope"))])
+        self.assertEqual(len(result.skipped_reasons), 1)
+        self.assertIn("could not be read as an image", result.skipped_reasons[0])
+
+    def test_heic_without_support_says_how_to_fix_it(self):
+        original = collage.HEIF_SUPPORTED
+        collage.HEIF_SUPPORTED = False
+        try:
+            result = collage.build_collage([("IMG_1.HEIC", io.BytesIO(b"nope"))])
+        finally:
+            collage.HEIF_SUPPORTED = original
+        self.assertIn("pip install pillow-heif", result.skipped_reasons[0])
+
     def test_only_unreadable_files_gives_no_pages(self):
         result = collage.build_collage([("bad.txt", io.BytesIO(b"nope"))])
         self.assertEqual(result.pages, [])
