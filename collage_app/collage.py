@@ -396,26 +396,16 @@ def _dp_rows(ids, aspects, width, gap, limit, band_lo, band_hi, max_per_row=10):
 def _dp_best(ids, aspects, width, gap, limit, ref_hi, ref_lo, step, floor):
     """Pick the exact packing that uses the page best.
 
-    First tries rows of similar height (neat). Only if that leaves the page less than
-    ~93% used does it allow bigger differences between rows (e.g. one large photo
-    plus smaller ones), and only when that clearly fills more of the page.
+    Rows may differ in height by at most about 1.8x (0.72 .. 1.28 of a reference), and none
+    may be shorter than `floor`. So no photo ends up tiny next to the others; if that cannot
+    be done on one page the caller moves the extra photos to the next page instead.
     """
-
-    def scan(low_factor, high_factor):
-        best, ref = None, ref_hi
-        while ref >= ref_lo:
-            found = _dp_rows(ids, aspects, width, gap, limit, max(floor, ref * low_factor), min(limit, ref * high_factor))
-            if found and (best is None or found[1] > best[1]):
-                best = found
-            ref -= step
-        return best
-
-    best = scan(0.72, 1.28)
-    if best is None or best[1] < 0.93 * limit:
-        for low_factor, high_factor in ((0.55, 1.7), (0.3, 3.0)):
-            wider = scan(low_factor, high_factor)
-            if wider and (best is None or wider[1] > best[1] + 0.04 * limit):
-                best = wider
+    best, ref = None, ref_hi
+    while ref >= ref_lo:
+        found = _dp_rows(ids, aspects, width, gap, limit, max(floor, ref * 0.72), min(limit, ref * 1.28))
+        if found and (best is None or found[1] > best[1]):
+            best = found
+        ref -= step
     return best
 
 
@@ -428,7 +418,7 @@ def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
     gap = margin
     scale = page_w / BASE_PAGE_WIDTH
 
-    h_lo = max(40, round(180 * scale))
+    h_lo = max(40, round(240 * scale))
     h_hi = usable_h if count == 1 else min(usable_h, round(800 * scale))
     h_hi = max(h_hi, h_lo)
     ids = list(range(count))
