@@ -75,7 +75,7 @@ def create_preview(request):
         logger.exception("Collage generation failed")
         return _error("Could not create the collage. Please try fewer or smaller photos.", status=500)
 
-    skipped += [f"{name} (not a readable image)" for name in result.skipped]
+    skipped += [f"{name} ({reason})" for name, reason in zip(result.skipped, result.skipped_reasons)]
     if not result.pages:
         return _error("None of the selected files could be read as images.", skipped=skipped)
 

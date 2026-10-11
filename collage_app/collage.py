@@ -14,12 +14,14 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
 
+HEIF_SUPPORTED = False
 try:  # lets iPhone HEIC/HEIF photos open; the app still works without it
     import pillow_heif
 
     pillow_heif.register_heif_opener()
+    HEIF_SUPPORTED = True
 except Exception:  # not installed, or its native library failed to load
     pass
 
@@ -342,7 +344,16 @@ def _layout(aspects, page_w, page_h, margin, header_h, footer_h):
 class Collage:
     pages: list = field(default_factory=list)  # PIL images
     skipped: list = field(default_factory=list)  # names of unreadable files
+    skipped_reasons: list = field(default_factory=list)  # why, same order as skipped
     warnings: list = field(default_factory=list)
+
+
+def _skip_reason(name, exc):
+    if name.lower().endswith((".heic", ".heif")) and not HEIF_SUPPORTED:
+        return "HEIC support is not installed on the server (run: pip install pillow-heif, then restart the server)"
+    if isinstance(exc, UnidentifiedImageError):
+        return "not a readable image"
+    return f"could not be read as an image ({type(exc).__name__}: {str(exc).strip()[:100]})"
 
 
 def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
@@ -358,8 +369,9 @@ def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
     for name, fileobj in sources:
         try:
             photos.append(Photo(name, fileobj))
-        except Exception:
+        except Exception as exc:
             result.skipped.append(name)
+            result.skipped_reasons.append(_skip_reason(name, exc))
     if not photos:
         return result
 
