@@ -286,10 +286,6 @@
                 try { return await response.json(); } catch (e) { return {}; }
             }
 
-            function fileKey(file) {
-                return file.name + "|" + file.size + "|" + file.lastModified;
-            }
-
             function isImage(file) {
                 return file.type.startsWith("image/") || /\.(heic|heif)$/i.test(file.name);
             }
@@ -335,24 +331,20 @@
                 if (Array.isArray(result)) result = result[0];
                 const jpg = new File([result], file.name.replace(HEIC_NAME, ".jpg"),
                                      { type: "image/jpeg", lastModified: file.lastModified });
-                jpg.originalKey = fileKey(file);   // so adding the same HEIC twice is still detected
                 return jpg;
             }
 
             async function addFiles(list) {
-                const known = new Set(files.map(function (f) { return f.originalKey || fileKey(f); }));
                 const notes = [];
                 const incoming = [];
                 let ignored = 0;
                 for (const file of list) {
                     if (!isImage(file)) { ignored++; continue; }
-                    if (known.has(fileKey(file))) continue;
                     if (files.length + incoming.length >= maxPhotos) {
                         notes.push({ kind: "warning", text: "Only " + maxPhotos + " photos are allowed. Extra photos were not added." });
                         break;
                     }
                     incoming.push(file);
-                    known.add(fileKey(file));
                 }
                 if (ignored) notes.push({ kind: "warning", text: ignored + " file(s) were not images and were ignored." });
 
