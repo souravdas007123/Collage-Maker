@@ -4,7 +4,8 @@ A Django app that turns many photos into a tight, print-ready collage PDF (A4, A
 
 ## Features
 - Upload by clicking or drag-and-drop; drag thumbnails to change the order
-- Optional header and footer text (Hindi, Bangla and other scripts work if a matching font is installed)
+- Optional header and footer text. Press Enter for a new line (up to 4 lines; the first is bigger, e.g. company name, the rest
+  smaller, e.g. address). Hindi, Bangla and other scripts work if a matching font is installed
 - Page size and spacing options
 - Uses the page fully: photos start at the very top and are packed down the page with an exact search, keeping
   every photo's aspect ratio (nothing is cropped or stretched). It tries to put everything on ONE page, but never by

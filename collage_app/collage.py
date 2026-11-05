@@ -195,21 +195,43 @@ def _fit_font(path, text, base_size, max_width):
         size -= 2
 
 
+MAX_BANNER_LINES = 4
+
+
+def _banner_lines(text):
+    """Header/footer text -> up to MAX_BANNER_LINES clean, non-empty lines (Enter = new line)."""
+    lines = [" ".join(line.split()) for line in str(text or "").splitlines()]
+    return [line for line in lines if line][:MAX_BANNER_LINES]
+
+
+def _banner_height(text, first_px, extra_px, scale):
+    """Height of the header/footer band: one line takes first_px, every further line extra_px."""
+    count = len(_banner_lines(text))
+    return round((first_px + extra_px * (count - 1)) * scale) if count else 0
+
+
 def _draw_banner(page, text, zone_top, zone_height, background, color, scale):
-    path, supported = _pick_font(text)
-    font = _fit_font(path, text, round(35 * scale), page.width - round(80 * scale))
+    """Draw 1-4 centred lines on a box. The first line (e.g. company name) is bigger than the rest (e.g. address)."""
+    lines = _banner_lines(text)
+    path, supported = _pick_font(" ".join(lines))
+    max_width = page.width - round(80 * scale)
+    fonts = [_fit_font(path, line, round((35 if k == 0 else 27) * scale), max_width) for k, line in enumerate(lines)]
     draw = ImageDraw.Draw(page)
 
-    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-    x = (page.width - (right - left)) // 2 - left
-    y = zone_top + (zone_height - (bottom - top)) // 2 - top
+    boxes = [draw.textbbox((0, 0), line, font=font) for line, font in zip(lines, fonts)]
+    gap = round(7 * scale)
+    heights = [bottom - top for _, top, _, bottom in boxes]
+    block_h = sum(heights) + gap * (len(lines) - 1)
+    block_w = max(right - left for left, _, right, _ in boxes)
 
     pad_x, pad_top, pad_bottom = round(5 * scale), round(8 * scale), round(5 * scale)
-    draw.rectangle(
-        [x + left - pad_x, y + top - pad_top, x + right + pad_x, y + bottom + pad_bottom],
-        fill=background,
-    )
-    draw.text((x, y), text, fill=color, font=font)
+    y = zone_top + (zone_height - block_h) // 2
+    x0 = (page.width - block_w) // 2
+    draw.rectangle([x0 - pad_x, y - pad_top, x0 + block_w + pad_x, y + block_h + pad_bottom], fill=background)
+    for line, font, (left, top, right, bottom), height in zip(lines, fonts, boxes, heights):
+        x = (page.width - (right - left)) // 2 - left
+        draw.text((x, y - top), line, fill=color, font=font)
+        y += height + gap
     return supported
 
 
@@ -218,9 +240,9 @@ def _banner_layer(size, header_text, footer_text, header_h, footer_h):
     layer = Image.new("RGB", size, "white")
     scale = size[0] / BASE_PAGE_WIDTH
     warnings = []
-    if header_text and not _draw_banner(layer, header_text, 0, header_h, "#ffeb3b", "black", scale):
+    if header_h and not _draw_banner(layer, header_text, 0, header_h, "#ffeb3b", "black", scale):
         warnings.append("Header text has characters your installed fonts cannot draw.")
-    if footer_text and not _draw_banner(
+    if footer_h and not _draw_banner(
         layer, footer_text, size[1] - footer_h, footer_h, "#f3f4f6", "#374151", scale
     ):
         warnings.append("Footer text has characters your installed fonts cannot draw.")
@@ -572,8 +594,8 @@ def build_collage(sources, page_size=DEFAULT_PAGE_SIZE, margin=DEFAULT_MARGIN,
         return result
 
     scale = page_w / BASE_PAGE_WIDTH
-    header_h = round(80 * scale) if header_text else 0
-    footer_text_h = round(70 * scale) if footer_text else 0
+    header_h = _banner_height(header_text, 80, 38, scale)
+    footer_text_h = _banner_height(footer_text, 70, 34, scale)
 
     stamp, stamp_band = None, 0
     if signature is not None:

@@ -22,8 +22,9 @@ def _error(message, status=400, **extra):
 
 
 def _clean_text(value):
-    """Single line, trimmed, length-limited."""
-    return " ".join((value or "").split())[:MAX_TEXT_LENGTH]
+    """Up to 4 trimmed lines (Enter = new line), length-limited."""
+    lines = [" ".join(line.split()) for line in (value or "").splitlines()]
+    return "\n".join([line for line in lines if line][:4])[:MAX_TEXT_LENGTH * 2]
 
 
 def _int(value, default, low, high):

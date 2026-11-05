@@ -205,6 +205,16 @@ class PageFillTests(unittest.TestCase):
         self.assertEqual(pages, sorted(pages))
         self.assertGreater(pages[2], pages[0])
 
+    def test_header_lines_go_on_separate_lines_and_take_more_space(self):
+        one = collage.build_collage(sources(4), header_text="ABC Traders").pages[0]
+        two = collage.build_collage(sources(4), header_text="ABC Traders\n12 Main Road, Kolkata").pages[0]
+        self.assertEqual(collage._banner_lines("A  b\n\n  c d \r\ne"), ["A b", "c d", "e"])
+        self.assertEqual(len(collage._banner_lines("1\n2\n3\n4\n5\n6")), collage.MAX_BANNER_LINES)
+        first_photo_row = lambda page: next(y for y in range(page.height) if page.getpixel((30, y)) != (255, 255, 255))
+        self.assertGreater(first_photo_row(two), first_photo_row(one))
+        self.assertEqual(collage._banner_height("", 80, 38, 1.0), 0)
+        self.assertEqual(collage._banner_height(" \n ", 80, 38, 1.0), 0)
+
     def test_header_gets_padding_and_photos_start_below_it(self):
         page = collage.build_collage(sources(10), header_text="My Title").pages[0]
         header = ink_box(page.crop((0, 0, 1240, 80)))
