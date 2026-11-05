@@ -13,7 +13,7 @@ MAX_PHOTOS = 150
 MAX_PHOTO_BYTES = 30 * 1024 * 1024
 MAX_PDF_PAGES = 150
 MAX_PAGE_BYTES = 15 * 1024 * 1024
-MAX_TEXT_LENGTH = 100
+MAX_TEXT_LENGTH = 300
 MAX_SIGNATURE_BYTES = 10 * 1024 * 1024
 
 
@@ -24,7 +24,7 @@ def _error(message, status=400, **extra):
 def _clean_text(value):
     """Up to 4 trimmed lines (Enter = new line), length-limited."""
     lines = [" ".join(line.split()) for line in (value or "").splitlines()]
-    return "\n".join([line for line in lines if line][:4])[:MAX_TEXT_LENGTH * 2]
+    return "\n".join([line for line in lines if line][:4])[:MAX_TEXT_LENGTH]
 
 
 def _int(value, default, low, high):
